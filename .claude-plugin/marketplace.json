@@ -1,0 +1,11 @@
+{
+  "name": "gps-skills",
+  "owner": { "name": "Grant Petersen-Speelman" },
+  "plugins": [
+    {
+      "name": "gps-skills",
+      "source": "./",
+      "description": "Grant Petersen-Speelman's preferred minimum set of Claude Code skills"
+    }
+  ]
+}
