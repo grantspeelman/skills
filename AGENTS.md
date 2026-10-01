@@ -14,4 +14,5 @@ This repo is a Claude Code plugin (`gps-skills`) that packages a set of skills.
 - Each skill needs a `SKILL.md` with `name` and `description` frontmatter. The name must match the folder name.
 - When adding, removing or renaming a skill, update the list in `README.md`.
 - Keep the `name` in `plugin.json` and `marketplace.json` in sync.
+- `skills/setup-devcontainer/template/` is a generic copy of `.devcontainer/`, `lefthook.yml` and the devcontainer CI workflow. When you change those, make the same change in the template. `ssh_known_hosts` is left out of the template on purpose; the skill fetches it.
 - Don't commit secrets, customer data or PII. Use synthetic data in examples.
