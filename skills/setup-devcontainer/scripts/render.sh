@@ -3,7 +3,8 @@
 #   render.sh <target-repo> <project-slug>
 # Refuses to overwrite: if any template file already exists in the target, it
 # lists them and exits 3 without writing anything. Leaves the __PROJECT_*__
-# tailoring markers in place for the skill to fill in.
+# tailoring markers in place for the skill to fill in. It does not create
+# .devcontainer/ssh_known_hosts: the skill fetches and checks those keys itself.
 set -euo pipefail
 
 if [ $# -ne 2 ]; then
@@ -38,3 +39,4 @@ for f in "${files[@]}"; do
     [ -x "$TEMPLATE/$f" ] && chmod +x "$target/$f"
     echo "$f"
 done
+echo "Still to do: create .devcontainer/ssh_known_hosts (the Dockerfile copies it)." >&2

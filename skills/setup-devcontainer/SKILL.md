@@ -21,7 +21,8 @@ security posture as it is and add what this repo needs.
 - `.devcontainer/` with a `Dockerfile` (Ubuntu, Node for Claude Code, Python,
   `gh`, `gitleaks`, `lefthook`, Docker for opt-in nesting), compose files,
   `start.sh`, `postStartCommand.sh`, `container-structure-test.yaml`,
-  `smoke-test.sh` and a `README.md`.
+  `smoke-test.sh` and a `README.md`. It doesn't include `ssh_known_hosts`;
+  step 5 creates that file from the git host's published keys.
 - `lefthook.yml`, which runs gitleaks on staged changes before each commit.
 - `.github/workflows/devcontainer-ci.yml`, which builds the image, runs the
   structure test and smoke test, and scans the full history for secrets.
@@ -92,6 +93,8 @@ The rendered files carry markers to replace (and remove once used):
 | `# __PROJECT_SMOKE_TESTS__` | `smoke-test.sh` | Checks that the project builds/tests inside |
 | `__PROJECT_TOOLCHAIN_DOCS__` | `README.md` | What was added and how to bump it |
 
+`.devcontainer/ssh_known_hosts` isn't rendered at all. You create it in step 5.
+
 No marker may survive: `grep -rn '__PROJECT' .devcontainer lefthook.yml .github`
 must come back empty.
 
@@ -156,15 +159,36 @@ hook manager, don't install a second one: add the gitleaks command to the
 existing setup and drop `lefthook.yml` and `lefthook install` from the template,
 then tell the user.
 
-### 5. Adapt to the host
+### 5. Pin the git host's SSH keys
 
-- **Not on GitHub:** replace `ssh_known_hosts` with the right host's keys from
-  its official published source (say where they came from, with the date) and
-  update the structure test that checks it. Convert or drop the GitHub Actions
-  workflow to match the repo's CI and ask the user which.
-- **GitHub:** refresh `ssh_known_hosts` from `https://api.github.com/meta`
-  (`.ssh_keys`) if you can reach it, and update the fetched date.
-- Keep the actions pinned to commit SHAs as in the template.
+The template doesn't ship host keys, so they're always fetched fresh. The
+`Dockerfile` copies `.devcontainer/ssh_known_hosts` into the image and the build
+fails without it. Create it like this for GitHub:
+
+```bash
+{
+  echo "# GitHub SSH host keys, from https://api.github.com/meta (fetched $(date -u +%F))."
+  curl -fsSL https://api.github.com/meta | jq -r '.ssh_keys[] | "github.com " + .'
+} > .devcontainer/ssh_known_hosts
+ssh-keygen -lf .devcontainer/ssh_known_hosts
+```
+
+Then check that every SHA256 fingerprint `ssh-keygen` prints matches the
+fingerprints GitHub publishes at
+<https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints>.
+The API and the docs page are two separate sources, so a match means the keys
+weren't tampered with on the way in. If they don't match, or you can't reach
+either source, stop and tell the user. Never write host keys from memory or
+copy them from another repo.
+
+**Not on GitHub:** do the same with the host's own official sources, for
+example GitLab's published SSH host keys and fingerprints page. Change the
+comment and the `github\.com ssh-ed25519` pattern in the structure test to
+that host. Convert or drop the GitHub Actions workflow to match the repo's CI,
+and ask the user which. If the host doesn't publish its keys anywhere official,
+ask the user for the fingerprints instead of trusting a first `ssh-keyscan`.
+
+Keep the actions pinned to commit SHAs as in the template.
 
 ### 6. Verify
 
