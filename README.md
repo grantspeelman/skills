@@ -4,15 +4,7 @@ Grant Petersen-Speelman's preferred minimum set of Claude Code skills.
 
 ## Skills
 
-- `docs` – create and edit shareable docs
-- `docx` – Word documents
-- `google-workspace` – Google Docs, Sheets and Slides
-- `import-memory` – import memory from another AI assistant
-- `morning` – morning brief
-- `pdf` – read, merge, split, fill and create PDFs
-- `pptx` – PowerPoint decks
-- `skill-creator` – create and improve skills
-- `xlsx` – spreadsheets
+_None yet._
 
 ## Install as a Claude Code plugin
 

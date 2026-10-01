@@ -15,4 +15,3 @@ This repo is a Claude Code plugin (`gps-skills`) that packages a set of skills.
 - When adding, removing or renaming a skill, update the list in `README.md`.
 - Keep the `name` in `plugin.json` and `marketplace.json` in sync.
 - Don't commit secrets, customer data or PII. Use synthetic data in examples.
-- `docx`, `pdf`, `pptx` and `xlsx` have their own `LICENSE.txt`. Leave those files unchanged.
