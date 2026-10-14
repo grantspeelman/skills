@@ -29,6 +29,13 @@ checkout_slug="$(printf '%s' "$(basename "$PROJECT_ROOT")" | tr '[:upper:]' '[:l
 checkout_digest="$(printf '%s' "$PROJECT_ROOT" | cksum | cut -d ' ' -f 1)"
 COMPOSE_PROJECT="__PROJECT__-${checkout_slug}-${checkout_digest}"
 SERVICE="app"
+# docker-compose.yml mounts .git/hooks and .git/config read-only, which needs a
+# real .git directory; in a worktree .git is a file pointing elsewhere.
+if [ ! -d "$PROJECT_ROOT/.git" ]; then
+    echo -e "${RED}$PROJECT_ROOT/.git is not a directory (a git worktree?). The dev container needs a regular clone.${NC}" >&2
+    exit 1
+fi
+
 COMPOSE=(docker compose -p "$COMPOSE_PROJECT"
     -f "$SCRIPT_DIR/docker-compose.yml"
     -f "$SCRIPT_DIR/compose.ssh.yml")
@@ -74,7 +81,7 @@ if [ -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
 fi
 
 if [ "$docker_mode" = true ]; then
-    echo -e "${YELLOW}--docker: the container runs PRIVILEGED. With sudo inside, it is not a boundary between Claude and this host.${NC}"
+    echo -e "${YELLOW}--docker: the container runs PRIVILEGED. With dockerd inside, it is not a boundary between Claude and this host.${NC}"
 fi
 
 # ── Build and start ──────────────────────────────────────────────────────────

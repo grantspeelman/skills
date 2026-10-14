@@ -18,6 +18,9 @@ ARG USER_GID=1000
 #   • docker.io & co.: for `start.sh --docker` only. dockerd is started by
 #     /entrypoint.sh when ENABLE_DOCKER=1, which compose.docker.yml sets alongside
 #     privileged mode; otherwise the binaries sit unused.
+#   • No sudo, on purpose: root inside the container could undo the read-only
+#     mounts and anything else meant to hold Claude in. Tools a project needs
+#     go in here, at build time.
 #   • bubblewrap/socat: what Claude Code's Linux sandbox (/sandbox) runs on.
 #     They won't run on hosts that restrict unprivileged user namespaces (Ubuntu's
 #     kernel.apparmor_restrict_unprivileged_userns=1), not even with --docker. The
@@ -43,7 +46,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     ripgrep \
     socat \
-    sudo \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 
@@ -113,6 +115,16 @@ RUN npm install -g @anthropic-ai/claude-code \
     && npm cache clean --force
 ENV DISABLE_AUTOUPDATER=1
 
+# Git hooks live in the image, not in the checkout: .git/hooks is mounted
+# read-only (see docker-compose.yml) so nothing in the container can plant a hook
+# that later runs on the host. Root-owned, so Claude can't edit them either.
+COPY .devcontainer/git-hooks/ /usr/local/share/git-hooks/
+RUN chmod 755 /usr/local/share/git-hooks/* && \
+    git config --system core.hooksPath /usr/local/share/git-hooks && \
+    # .git/config is read-only too, so `git push -u` can't record an upstream;
+    # pushing to the same-named branch makes a plain `git push` work without one.
+    git config --system push.default current
+
 # Pin GitHub's SSH host keys (from https://api.github.com/meta) so the first
 # `git push` neither prompts nor trusts whatever answers on port 22.
 COPY .devcontainer/ssh_known_hosts /etc/ssh/ssh_known_hosts
@@ -137,11 +149,8 @@ RUN set -eux; \
     else \
         useradd -l -m -d /home/vscode -s /bin/bash -g "${USER_GID}" -u "${USER_UID}" vscode; \
     fi; \
-    # Passwordless sudo stays inside the container's walls — unless it runs
-    # privileged (start.sh --docker), where root here is effectively host root.
-    printf '%s\n' 'vscode ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/vscode; \
-    chmod 0440 /etc/sudoers.d/vscode; \
-    visudo -cf /etc/sudoers.d/vscode; \
+    # docker group: only matters with start.sh --docker, where dockerd runs. Access
+    # to it is root-equivalent, which is why that mode is not a boundary.
     usermod -aG docker vscode
 
 # Claude's config dir is a named volume (see docker-compose.yml) so the login

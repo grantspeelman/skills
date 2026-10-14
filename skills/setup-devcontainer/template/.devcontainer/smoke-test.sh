@@ -60,12 +60,13 @@ pass "Claude defaults to bypassPermissions"
 
 # __PROJECT_SMOKE_TESTS__
 
-in_container 'test -x /workspace/.git/hooks/pre-commit' || fail "lefthook pre-commit hook not installed"
-pass "pre-commit hook installed"
+[ "$(in_container 'git -C /workspace config core.hooksPath')" = /usr/local/share/git-hooks ] \
+    || fail "git does not use the image's hooks"
+pass "git uses the image's hooks"
 
 in_container '
     set -e; git init -q /tmp/t; cp /workspace/lefthook.yml /tmp/t/; cd /tmp/t
-    git config user.email smoke@example.com; git config user.name smoke; lefthook install >/dev/null
+    git config user.email smoke@example.com; git config user.name smoke
     printf "token = \"ghp_%s\"\n" "$(head -c 300 /dev/urandom | tr -dc A-Za-z0-9 | head -c 36)" > leak.txt
     git add leak.txt; ! git commit -qm leak >/dev/null 2>&1' || fail "gitleaks hook let a token through"
 pass "gitleaks hook blocks a token"
@@ -80,5 +81,23 @@ echo "# back to unprivileged"
 pass "container recreated unprivileged"
 "${BASE[@]}" exec -T --user vscode app bash -c '! docker info >/dev/null 2>&1' || fail "dockerd running while unprivileged"
 pass "no dockerd while unprivileged"
+
+echo "# read-only paths, unprivileged"
+in_unprivileged() { "${BASE[@]}" exec -T --user "$1" app bash -c "$2"; }
+in_unprivileged vscode '! command -v sudo' >/dev/null || fail "sudo is installed"
+pass "no sudo"
+for path in .devcontainer/start.sh .devcontainer/smoke-plant .git/config .git/hooks/smoke-plant; do
+    in_unprivileged vscode "! touch /workspace/$path 2>/dev/null" || fail "/workspace/$path is writable"
+done
+pass "host-executed paths are read-only"
+in_unprivileged vscode '! git -C /workspace config core.fsmonitor "touch /tmp/pwned" 2>/dev/null' \
+    || fail "git config could be changed"
+pass "git config can't be changed"
+in_unprivileged root 'command -v mount' >/dev/null || fail "no mount binary to test remounting with"
+for path in .devcontainer .git/hooks .git/config; do
+    in_unprivileged root "! mount -o remount,rw,bind /workspace/$path 2>/dev/null" \
+        || fail "root could remount /workspace/$path read-write"
+done
+pass "even root can't remount them read-write"
 
 echo "all smoke tests passed"
