@@ -28,9 +28,10 @@ security posture as it is and add what this repo needs.
   structure test and smoke test, and scans the full history for secrets.
 
 Leave these properties alone unless the user asks you to change them: only the
-checkout is mounted, no host `~/.ssh` or `~/.claude`; `.devcontainer/`,
-`.git/hooks` and `.git/config` are mounted read-only, so nothing in the
-container can plant code the host later runs; there's no `sudo`, so those
+checkout is mounted, no host `~/.ssh` or `~/.claude`; `.git/hooks` and
+`.git/config` are mounted read-only, so nothing in the container can plant
+code that host git later runs (`.devcontainer/` stays writable so agents can
+maintain it, and the README tells the user to review changes to it); there's no `sudo`, so those
 mounts hold even against root; git hooks come from the image via
 `core.hooksPath`; the agent is forwarded rather than the key; GitHub host keys
 are pinned; downloaded binaries are pinned and SHA-256 checked; nested Docker

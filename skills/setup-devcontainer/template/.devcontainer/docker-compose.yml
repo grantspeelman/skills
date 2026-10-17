@@ -1,7 +1,8 @@
 # Base definition shared by VS Code and start.sh. It deliberately mounts nothing
 # from the host but this checkout: no ~/.ssh, no ~/.claude, no home directory.
-# The parts of the checkout the host executes are mounted read-only on top, so
-# a prompt-injected command in here can't plant code that later runs out there.
+# .git/hooks and .git/config are mounted read-only on top, so a prompt-injected
+# command in here can't plant code that host git later runs. .devcontainer/ is
+# left writable so agents can maintain it; review changes before running them.
 # start.sh layers compose.ssh.yml (agent forwarding) and, with --docker,
 # compose.docker.yml (privileged nested Docker) on top of it.
 services:
@@ -14,8 +15,6 @@ services:
         USER_GID: ${USER_GID:-1000}
     volumes:
       - ..:/workspace:cached
-      # start.sh and the compose files run on the host.
-      - ../.devcontainer:/workspace/.devcontainer:ro
       # Host git runs hooks from here, and commands named in .git/config
       # (core.fsmonitor, core.sshCommand, aliases, filters...). The container's
       # own hooks come from the image; see core.hooksPath in the Dockerfile.

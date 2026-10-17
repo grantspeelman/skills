@@ -86,7 +86,7 @@ echo "# read-only paths, unprivileged"
 in_unprivileged() { "${BASE[@]}" exec -T --user "$1" app bash -c "$2"; }
 in_unprivileged vscode '! command -v sudo' >/dev/null || fail "sudo is installed"
 pass "no sudo"
-for path in .devcontainer/start.sh .devcontainer/smoke-plant .git/config .git/hooks/smoke-plant; do
+for path in .git/config .git/hooks/smoke-plant; do
     in_unprivileged vscode "! touch /workspace/$path 2>/dev/null" || fail "/workspace/$path is writable"
 done
 pass "host-executed paths are read-only"
@@ -94,7 +94,7 @@ in_unprivileged vscode '! git -C /workspace config core.fsmonitor "touch /tmp/pw
     || fail "git config could be changed"
 pass "git config can't be changed"
 in_unprivileged root 'command -v mount' >/dev/null || fail "no mount binary to test remounting with"
-for path in .devcontainer .git/hooks .git/config; do
+for path in .git/hooks .git/config; do
     in_unprivileged root "! mount -o remount,rw,bind /workspace/$path 2>/dev/null" \
         || fail "root could remount /workspace/$path read-write"
 done

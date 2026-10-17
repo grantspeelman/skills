@@ -2,6 +2,7 @@
 # Build, start and attach to the dev container from a plain terminal.
 #   --rebuild  rebuild the image from scratch (also how Claude Code gets upgraded)
 #   --docker   privileged mode with nested Docker; see compose.docker.yml first
+#   -- CMD...  run CMD in the container instead of bash, e.g. -- claude --resume
 set -euo pipefail
 
 GREEN='\033[0;32m'
@@ -14,12 +15,19 @@ PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 
 rebuild=false
 docker_mode=false
-for arg in "$@"; do
-    case "$arg" in
+command=(bash)
+while [ "$#" -gt 0 ]; do
+    case "$1" in
         --rebuild) rebuild=true ;;
         --docker) docker_mode=true ;;
-        *) echo "Usage: $(basename "$0") [--rebuild] [--docker]" >&2; exit 64 ;;
+        --)
+            shift
+            if [ "$#" -gt 0 ]; then command=("$@"); fi
+            break
+            ;;
+        *) echo "Usage: $(basename "$0") [--rebuild] [--docker] [-- CMD [ARG...]]" >&2; exit 64 ;;
     esac
+    shift
 done
 
 # One container per checkout: key the compose project to the checkout path, so
@@ -116,4 +124,4 @@ printf -v stop_command '%q ' "${COMPOSE[@]}"
 echo -e "${GREEN}The container outlives this shell: rerun this script to get back in.${NC}"
 echo -e "${GREEN}Stop it with: ${stop_command}down${NC}"
 
-exec "${COMPOSE[@]}" exec --user vscode "$SERVICE" bash
+exec "${COMPOSE[@]}" exec --user vscode "$SERVICE" "${command[@]}"

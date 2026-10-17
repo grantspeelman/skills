@@ -13,6 +13,7 @@ container keeps running after you exit.
 |-------------|--------|
 | `--rebuild` | Rebuild the image from scratch. This is also how Claude Code gets upgraded. |
 | `--docker`  | Privileged mode with nested Docker. Read [Nested Docker](#nested-docker) first. |
+| `-- CMD...` | Run `CMD` in the container instead of a shell, e.g. `start.sh --rebuild -- claude --resume`. Must come last. |
 
 **VS Code:** *Dev Containers: Reopen in Container*. VS Code builds its own
 container from the same `docker-compose.yml`, separate from the one
@@ -46,7 +47,6 @@ later executes. Those are mounted read-only:
 
 | Path | Why |
 |---|---|
-| `.devcontainer/` | `start.sh` and the compose files run on the host. |
 | `.git/hooks/` | Host git runs these on commit, checkout, merge and so on. |
 | `.git/config` | Host git runs commands it names: `core.fsmonitor`, `core.sshCommand`, aliases, filters. |
 
@@ -54,8 +54,6 @@ Without `sudo`, not even root inside the container can remount them read-write.
 
 What this costs:
 
-- Edit `.devcontainer/` on the host. Claude can propose changes but can't
-  write them.
 - Anything that writes `.git/config` fails inside: `git push -u`, `git remote`,
   `git config`, branches that track a remote, `gh pr checkout`. Plain
   `git push` still works, because the image sets `push.default = current`. Do
@@ -66,9 +64,12 @@ What this costs:
   and the mounts fail.
 
 Everything else in the checkout is still writable, and some of it can reach
-your machine another way. Review changes to `.claude/`, `CLAUDE.md`, `.vscode/`
-and CI workflows before you run Claude, VS Code or a build against them on the
-host.
+your machine another way. `.devcontainer/` is the big one: it's writable so
+agents can maintain it, but `start.sh` and the compose files run on the host,
+so a prompt injection could plant code there that runs the next time you start
+the container. Review changes to `.devcontainer/`, `.claude/`, `CLAUDE.md`,
+`.vscode/` and CI workflows before you run `start.sh`, Claude, VS Code or a
+build against them on the host.
 
 ## Skills are live
 
