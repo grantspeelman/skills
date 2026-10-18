@@ -1,6 +1,7 @@
 #!/bin/bash
 # Build, start and attach to the dev container from a plain terminal.
-#   --rebuild  rebuild the image from scratch (also how Claude Code gets upgraded)
+#   --rebuild  git pull --ff-only, then rebuild the image from scratch (also how
+#              Claude Code gets upgraded)
 #   --docker   privileged mode with nested Docker; see compose.docker.yml first
 #   -- CMD...  run CMD in the container instead of bash, e.g. -- claude --resume
 set -euo pipefail
@@ -13,6 +14,7 @@ NC='\033[0m'
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 
+original_args=("$@")
 rebuild=false
 docker_mode=false
 command=(bash)
@@ -42,6 +44,17 @@ SERVICE="app"
 if [ ! -d "$PROJECT_ROOT/.git" ]; then
     echo -e "${RED}$PROJECT_ROOT/.git is not a directory (a git worktree?). The dev container needs a regular clone.${NC}" >&2
     exit 1
+fi
+
+# ── Update: --rebuild builds what's on the remote ───────────────────────────
+if [ "$rebuild" = true ] && [ -z "${START_SH_PULLED:-}" ]; then
+    echo -e "${GREEN}Pulling the latest changes (fast-forward only)...${NC}"
+    if ! git -C "$PROJECT_ROOT" pull --ff-only; then
+        echo -e "${RED}git pull --ff-only failed: sort out the branch, then rerun.${NC}" >&2
+        exit 1
+    fi
+    # The pull may have changed this script; run the new copy.
+    START_SH_PULLED=1 exec "$SCRIPT_DIR/start.sh" "${original_args[@]}"
 fi
 
 # ── Git identity: the container sees .git/config, not your ~/.gitconfig ─────
