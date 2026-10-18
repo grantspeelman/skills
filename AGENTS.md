@@ -20,3 +20,5 @@ This repo is a Claude Code and Codex plugin (`gps-skills`) that packages a set o
 - `skills/setup-devcontainer/template/` is a generic copy of `.devcontainer/`, `lefthook.yml` and the devcontainer CI workflow. When you change those, make the same change in the template. `ssh_known_hosts` is left out of the template on purpose; the skill fetches it.
 - Don't commit secrets, customer data or PII. Use synthetic data in examples.
 - Keep pull request titles and descriptions simple and high level, with a mermaid diagram where it helps explain the change.
+- The primary agent coordinates and delegates every repository change (code, docs, configuration, anything else) to sub-agents, rather than making it itself.
+- A sub-agent that didn't implement a change reviews it. The work isn't done until every review finding is addressed.
