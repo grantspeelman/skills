@@ -13,7 +13,7 @@ container keeps running after you exit.
 
 | Flag        | Effect |
 |-------------|--------|
-| `--rebuild` | Rebuild the image from scratch. This is also how Claude Code gets upgraded. |
+| `--rebuild` | Run `git pull --ff-only`, then rebuild the image from scratch. This is also how Claude Code gets upgraded. Stops if the pull fails, e.g. the branch has no upstream or has diverged. |
 | `--docker`  | Privileged mode with nested Docker. Read [Nested Docker](#nested-docker) first. |
 | `-- CMD...` | Run `CMD` in the container instead of a shell, e.g. `start.sh --rebuild -- claude --resume`. Must come last. |
 
