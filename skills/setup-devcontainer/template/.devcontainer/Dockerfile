@@ -127,12 +127,21 @@ RUN chmod 755 /usr/local/share/git-hooks/* && \
     # pushing to the same-named branch makes a plain `git push` work without one.
     git config --system push.default current
 
-# Pin GitHub's SSH host keys (from https://api.github.com/meta) so the first
-# `git push` neither prompts nor trusts whatever answers on port 22.
+# git talks to GitHub over HTTPS with GH_TOKEN, never over SSH: start.sh forwards
+# no ssh-agent, because an agent signs as your own key, for every repo and host
+# it reaches, while the token is scoped to this repo. The checkout's SSH remote
+# stays as it is (.git/config is read-only) and is rewritten here.
+RUN git config --system url.https://github.com/.insteadOf git@github.com: && \
+    git config --system --add url.https://github.com/.insteadOf ssh://git@github.com/ && \
+    git config --system credential.https://github.com.helper '!/usr/local/bin/gh auth git-credential'
+
+# Pin GitHub's SSH host keys (from https://api.github.com/meta) for the VS Code
+# path, which forwards the host's agent on its own, so ssh to github.com neither
+# prompts nor trusts whatever answers on port 22.
 COPY .devcontainer/ssh_known_hosts /etc/ssh/ssh_known_hosts
 
-# Create the `vscode` user with the host's UID/GID so bind-mounted files and the
-# forwarded ssh-agent socket are owned by the same user on both sides. The
+# Create the `vscode` user with the host's UID/GID so bind-mounted files are
+# owned by the same user on both sides. The
 # ubuntu base image ships an `ubuntu` user at 1000:1000, which is renamed rather than duplicated.
 RUN set -eux; \
     if [ "${USER_UID}" -eq 0 ] || [ "${USER_GID}" -eq 0 ]; then \

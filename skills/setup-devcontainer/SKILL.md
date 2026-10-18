@@ -3,8 +3,9 @@ name: setup-devcontainer
 description: >-
   Add a sandboxed dev container for running Claude Code with permission
   prompts off to the current repo, tailored to its languages, tools and
-  services. Built from the gps-skills dev container: Ubuntu, forwarded
-  ssh-agent, gitleaks pre-commit hook, structure test, smoke test and CI.
+  services. Built from the gps-skills dev container: Ubuntu, git over HTTPS
+  with a repo-scoped token instead of a forwarded ssh-agent, gitleaks
+  pre-commit hook, structure test, smoke test and CI.
 disable-model-invocation: true
 argument-hint: "[project-slug]"
 ---
@@ -33,8 +34,10 @@ checkout is mounted, no host `~/.ssh` or `~/.claude`; `.git/hooks` and
 code that host git later runs (`.devcontainer/` stays writable so agents can
 maintain it, and the README tells the user to review changes to it); there's no `sudo`, so those
 mounts hold even against root; git hooks come from the image via
-`core.hooksPath`; the agent is forwarded rather than the key; GitHub host keys
-are pinned; downloaded binaries are pinned and SHA-256 checked; nested Docker
+`core.hooksPath`; no ssh-agent is forwarded, and git reaches GitHub over HTTPS
+with the repo-scoped `GH_TOKEN` (gh as credential helper, SSH remotes rewritten
+in `/etc/gitconfig`); GitHub host keys are pinned for VS Code's own agent
+forwarding; downloaded binaries are pinned and SHA-256 checked; nested Docker
 stays opt-in and privileged only with `--docker`; the Claude config is a named
 volume.
 
@@ -197,8 +200,11 @@ weren't tampered with on the way in. If they don't match, or you can't reach
 either source, stop and tell the user. Never write host keys from memory or
 copy them from another repo.
 
-**Not on GitHub:** do the same with the host's own official sources, for
-example GitLab's published SSH host keys and fingerprints page. Change the
+**Not on GitHub:** the HTTPS rewrite and `gh` credential helper in the
+`Dockerfile` (and their structure and smoke tests) are GitHub-specific. Point
+them at the host's HTTPS URL and its CLI or token helper, or ask the user how
+the container should push. Pin the host keys from the host's own official
+sources, for example GitLab's published SSH host keys and fingerprints page. Change the
 comment and the `github\.com ssh-ed25519` pattern in the structure test to
 that host. Convert or drop the GitHub Actions workflow to match the repo's CI,
 and ask the user which. If the host doesn't publish its keys anywhere official,
@@ -214,7 +220,7 @@ Run what the environment allows, in this order, and report each result:
    workflow's first step.
 2. `docker build -f .devcontainer/Dockerfile .`
 3. `container-structure-test` against the image, if installed.
-4. `.devcontainer/smoke-test.sh` (needs Docker and an ssh-agent).
+4. `.devcontainer/smoke-test.sh` (needs Docker).
 
 If Docker isn't available, say plainly which steps didn't run and that CI will
 be the first real build. Don't claim it works when it hasn't been built.
@@ -226,4 +232,7 @@ them, what you verified and what you couldn't, and the first-run steps
 (`.devcontainer/start.sh`, which asks for a git `user.name` and `user.email`
 if the repo's `.git/config` lacks them, then `claude` and log in once). Mention
 that `start.sh -- <command>` runs a command instead of a shell, e.g.
-`start.sh -- claude --resume`. Don't commit unless they ask.
+`start.sh -- claude --resume`. Tell them the container pushes only with the
+token in `~/.config/<owner>/<name>/gh.env`, and point them at the README's
+GitHub access section for its permissions (no Administration) and the `main`
+ruleset with no bypass. Don't commit unless they ask.

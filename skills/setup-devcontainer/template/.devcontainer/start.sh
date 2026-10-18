@@ -66,8 +66,7 @@ for key in user.name user.email; do
 done
 
 COMPOSE=(docker compose -p "$COMPOSE_PROJECT"
-    -f "$SCRIPT_DIR/docker-compose.yml"
-    -f "$SCRIPT_DIR/compose.ssh.yml")
+    -f "$SCRIPT_DIR/docker-compose.yml")
 if [ "$docker_mode" = true ]; then
     COMPOSE+=(-f "$SCRIPT_DIR/compose.docker.yml")
 fi
@@ -81,33 +80,12 @@ if [ "$USER_UID" -eq 0 ] || [ "$USER_GID" -eq 0 ]; then
 fi
 export USER_UID USER_GID
 
-# ── SSH: make sure a host agent is running and holds a key ───────────────────
-# ssh-add -l exits 0 (has keys), 1 (no keys) or 2 (no agent reachable).
-agent_status() { local s=0; ssh-add -l >/dev/null 2>&1 || s=$?; echo "$s"; }
-
-if [ -z "${SSH_AUTH_SOCK:-}" ] || [ "$(agent_status)" -eq 2 ]; then
-    # No session agent: use one at a fixed path, so later runs find it again
-    # instead of starting an agent per run.
-    SSH_AUTH_SOCK="${XDG_RUNTIME_DIR:-$HOME/.ssh}/__PROJECT__-ssh-agent.sock"
-    export SSH_AUTH_SOCK
-    if [ "$(agent_status)" -eq 2 ]; then
-        rm -f "$SSH_AUTH_SOCK"
-        ssh-agent -a "$SSH_AUTH_SOCK" >/dev/null
-        echo -e "${GREEN}Started ssh-agent on ${SSH_AUTH_SOCK}${NC}"
-    fi
-fi
-if [ "$(agent_status)" -eq 1 ]; then
-    echo -e "${GREEN}The ssh-agent holds no keys; loading your default key...${NC}"
-    if ! ssh-add; then
-        echo -e "${RED}ssh-add failed. Load a key yourself (ssh-add <path>) and rerun.${NC}" >&2
-        exit 1
-    fi
-fi
-export HOST_SSH_AUTH_SOCK="$SSH_AUTH_SOCK"
-
+# ── GitHub: the token is the container's only git credential ────────────────
+# No ssh-agent is forwarded: it would sign as your own key, which reaches every
+# repo and host that key can. git pushes over HTTPS with GH_TOKEN instead.
 GH_ENV_FILE="$HOME/.config/__PROJECT_REPO__/gh.env"
 if [ ! -f "$GH_ENV_FILE" ]; then
-    echo -e "${YELLOW}No $GH_ENV_FILE (GH_TOKEN=...): gh inside the container will be unauthenticated.${NC}"
+    echo -e "${YELLOW}No $GH_ENV_FILE (GH_TOKEN=...): git push and gh inside the container will not work.${NC}"
 elif [ -n "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
     echo -e "${YELLOW}GH_TOKEN/GITHUB_TOKEN in this shell isn't passed in; the container uses $GH_ENV_FILE.${NC}"
 fi

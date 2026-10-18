@@ -30,8 +30,8 @@ shares, so it survives rebuilds and covers both entry points.
 | | |
 |---|---|
 | **Files** | Only this checkout, at `/workspace`, with the parts the host executes mounted read-only (see below). No host home directory, `~/.ssh` or `~/.claude`. |
-| **SSH** | Your host ssh-agent, forwarded as a socket. `start.sh` starts an agent and runs `ssh-add` if it needs to. The container can use your key to sign, but it can't read or copy the key. GitHub's host keys are pinned in the image. |
-| **GitHub API** | `GH_TOKEN=...` in `~/.config/__PROJECT_REPO__/gh.env` on the host, outside the checkout. A token exported in your shell isn't passed in. Use a fine-grained token scoped to this repo. The `env_file` entry needs Docker Compose 2.24 or later. |
+| **GitHub** | Only `GH_TOKEN=...` from `~/.config/__PROJECT_REPO__/gh.env` on the host, outside the checkout, for both `git push` and `gh`. A token exported in your shell isn't passed in. See [GitHub access](#github-access) for the permissions it should have. The `env_file` entry needs Docker Compose 2.24 or later. |
+| **SSH** | None from `start.sh`: no ssh-agent is forwarded. VS Code forwards your host agent on its own (see below). |
 | **Claude** | Its own config (the volume above), with `permissions.defaultMode = bypassPermissions`. Your host Claude settings are untouched. |
 | **Network** | Unrestricted outbound. There's no egress firewall. |
 
@@ -39,6 +39,40 @@ There's no `sudo` in the container. Root could undo the read-only mounts, so
 anything the project needs installed goes in the `Dockerfile`. For a one-off
 root shell, use `docker compose exec --user root app bash` from the host, where
 Claude can't.
+
+## GitHub access
+
+`start.sh` forwards no ssh-agent. An agent signs as your own key, so a prompt
+injection could push to every repo, and log in to every host, that key
+reaches. The token reaches only what you give it.
+
+Inside the container git rewrites GitHub SSH remotes (`git@github.com:...`) to
+HTTPS and authenticates with `gh`, so the checkout's remote doesn't need
+changing and a plain `git push` works. Without `gh.env`, nothing in the
+container can push.
+
+Create a [fine-grained token](https://github.com/settings/personal-access-tokens/new)
+for this repo only, with:
+
+| Permission | Access | Why |
+|---|---|---|
+| Contents | Read and write | `git fetch` and `git push` |
+| Pull requests | Read and write | `gh pr create` and friends |
+| Administration | **None** | With it, a prompt injection could delete the ruleset below |
+| Workflows | None | Pushes that change `.github/workflows/` are rejected; push those from the host, so CI can't be rewritten from inside |
+
+Add Issues or others as you need them, and give it an expiry.
+
+The token can still push to `main`, so protect it with a
+[ruleset](https://github.com/__PROJECT_REPO__/settings/rules): target the
+default branch, require a pull request, block force pushes and deletion, and
+add **no bypass**. A bypass for you also covers the token, since the token acts
+as you. That means every change, from the host too, lands through a PR.
+
+**VS Code** is the exception: Dev Containers forwards your host agent into its
+container itself, and git there still uses HTTPS and the token, but anything
+in the container can find the agent's socket and sign with your key. Use
+`start.sh` when Claude reads untrusted content.
 
 ## Read-only parts of the checkout
 
@@ -104,7 +138,7 @@ a version test there, so when you bump a pin in the `Dockerfile` (version and
 SHA-256), update its test in the same commit.
 
 `smoke-test.sh` starts a real container the way `start.sh` does and checks it
-end to end: SSH forwarding, the read-only mounts and missing `sudo`, Claude settings, the project toolchain, the commit hook,
+end to end: no SSH agent and git over HTTPS with the token, the read-only mounts and missing `sudo`, Claude settings, the project toolchain, the commit hook,
 nested Docker, and switching back to unprivileged. It runs in about 30 seconds
 and cleans up after itself, using a throwaway Claude config volume so your login
 is never touched.
