@@ -27,6 +27,7 @@ jobs:
           docker compose \
             -f .devcontainer/docker-compose.yml \
             -f .devcontainer/compose.docker.yml \
+            -f .devcontainer/compose.maintain.yml \
             config --quiet
 
       - name: Build image
@@ -53,7 +54,8 @@ jobs:
 
   # Starts the container the way start.sh does and checks it behaves: no SSH
   # agent, git over HTTPS with GH_TOKEN, Claude settings, commit hook, project
-  # toolchain, nested Docker, and dropping back to unprivileged. The runner's UID (1001) also exercises the
+  # toolchain, nested Docker, dropping back to unprivileged, the read-only paths
+  # and --maintain. The runner's UID (1001) also exercises the
   # image's UID remapping, which the default 1000 build above does not.
   smoke:
     runs-on: ubuntu-latest

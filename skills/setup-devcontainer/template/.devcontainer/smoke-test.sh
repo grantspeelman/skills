@@ -2,7 +2,8 @@
 # End-to-end check of the dev container through the same compose files start.sh
 # uses: builds for the calling user's UID, runs the post-start setup, checks git
 # reaches GitHub only through GH_TOKEN, then exercises nested Docker and dropping
-# back out of it. Runs in CI (.github/workflows/devcontainer-ci.yml) and locally
+# back out of it, the read-only paths, and making .devcontainer/ writable with
+# compose.maintain.yml. Runs in CI (.github/workflows/devcontainer-ci.yml) and locally
 # alike. It uses its own compose project and a throwaway Claude config volume
 # (never your real login's), and removes them on exit.
 set -euo pipefail
@@ -85,7 +86,7 @@ echo "# read-only paths, unprivileged"
 in_unprivileged() { "${BASE[@]}" exec -T --user "$1" app bash -c "$2"; }
 in_unprivileged vscode '! command -v sudo' >/dev/null || fail "sudo is installed"
 pass "no sudo"
-for path in .git/config .git/hooks/smoke-plant; do
+for path in .git/config .git/hooks/smoke-plant .devcontainer/smoke-plant; do
     in_unprivileged vscode "! touch /workspace/$path 2>/dev/null" || fail "/workspace/$path is writable"
 done
 pass "host-executed paths are read-only"
@@ -93,10 +94,22 @@ in_unprivileged vscode '! git -C /workspace config core.fsmonitor "touch /tmp/pw
     || fail "git config could be changed"
 pass "git config can't be changed"
 in_unprivileged root 'command -v mount' >/dev/null || fail "no mount binary to test remounting with"
-for path in .git/hooks .git/config; do
+for path in .git/hooks .git/config .devcontainer; do
     in_unprivileged root "! mount -o remount,rw,bind /workspace/$path 2>/dev/null" \
         || fail "root could remount /workspace/$path read-write"
 done
 pass "even root can't remount them read-write"
+
+echo "# --maintain"
+MAINTAIN=("${BASE[@]}" -f "$SCRIPT_DIR/compose.maintain.yml")
+"${MAINTAIN[@]}" up --detach
+"${MAINTAIN[@]}" exec -T --user vscode app bash -c \
+    'touch /workspace/.devcontainer/smoke-plant && rm /workspace/.devcontainer/smoke-plant' \
+    || fail ".devcontainer/ is not writable with compose.maintain.yml"
+pass ".devcontainer/ writable with --maintain"
+"${BASE[@]}" up --detach
+in_unprivileged vscode '! touch /workspace/.devcontainer/smoke-plant 2>/dev/null' \
+    || fail ".devcontainer/ still writable after leaving --maintain"
+pass "read-only again without --maintain"
 
 echo "all smoke tests passed"
