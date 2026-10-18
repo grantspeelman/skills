@@ -21,11 +21,13 @@ services:
       - ../.git/hooks:/workspace/.git/hooks:ro
       - ../.git/config:/workspace/.git/config:ro
       - claude-config:/home/vscode/.claude
-    environment:
-      # Pass-through from the calling environment, never written to a file here.
-      # gh reads either; a fine-grained token scoped to this repo is enough.
-      - GH_TOKEN
-      - GITHUB_TOKEN
+    # GH_TOKEN=... for gh, from a host file outside the checkout, where the
+    # container can't read or change it. A fine-grained token scoped to this
+    # repo is enough. No `environment:` pass-through on purpose: an unset
+    # pass-through overrides the file with nothing.
+    env_file:
+      - path: ${HOME}/.config/__PROJECT__/gh.env
+        required: false
 # __PROJECT_SERVICES__
 
 volumes:

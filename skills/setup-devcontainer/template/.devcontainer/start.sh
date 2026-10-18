@@ -105,8 +105,11 @@ if [ "$(agent_status)" -eq 1 ]; then
 fi
 export HOST_SSH_AUTH_SOCK="$SSH_AUTH_SOCK"
 
-if [ -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
-    echo -e "${YELLOW}Neither GH_TOKEN nor GITHUB_TOKEN is set: gh inside the container will be unauthenticated.${NC}"
+GH_ENV_FILE="$HOME/.config/__PROJECT__/gh.env"
+if [ ! -f "$GH_ENV_FILE" ]; then
+    echo -e "${YELLOW}No $GH_ENV_FILE (GH_TOKEN=...): gh inside the container will be unauthenticated.${NC}"
+elif [ -n "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
+    echo -e "${YELLOW}GH_TOKEN/GITHUB_TOKEN in this shell isn't passed in; the container uses $GH_ENV_FILE.${NC}"
 fi
 
 if [ "$docker_mode" = true ]; then
