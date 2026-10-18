@@ -6,7 +6,9 @@ without handing Claude the rest of the machine.
 ## Getting in
 
 **Terminal:** `.devcontainer/start.sh` builds the image (first run only), starts
-the container, and drops you into a shell. Rerun it to get back in; the
+the container, and drops you into a shell. If the repo's `.git/config` has no
+`user.name` or `user.email`, it asks for them first (defaulting to your global
+git config), since the container can't see `~/.gitconfig`. Rerun it to get back in; the
 container keeps running after you exit.
 
 | Flag        | Effect |

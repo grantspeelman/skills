@@ -44,6 +44,27 @@ if [ ! -d "$PROJECT_ROOT/.git" ]; then
     exit 1
 fi
 
+# ── Git identity: the container sees .git/config, not your ~/.gitconfig ─────
+identity_changed=false
+for key in user.name user.email; do
+    if [ -n "$(git -C "$PROJECT_ROOT" config --local --get "$key" || true)" ]; then
+        continue
+    fi
+    if [ ! -t 0 ]; then
+        echo -e "${YELLOW}$key is not set in this repo's .git/config: commits inside the container will fail.${NC}"
+        continue
+    fi
+    default="$(git -C "$PROJECT_ROOT" config --global --get "$key" || true)"
+    read -r -p "Git $key for this repo${default:+ [$default]}: " value
+    value="${value:-$default}"
+    if [ -z "$value" ]; then
+        echo -e "${RED}$key is required for commits inside the container.${NC}" >&2
+        exit 1
+    fi
+    git -C "$PROJECT_ROOT" config --local "$key" "$value"
+    identity_changed=true
+done
+
 COMPOSE=(docker compose -p "$COMPOSE_PROJECT"
     -f "$SCRIPT_DIR/docker-compose.yml"
     -f "$SCRIPT_DIR/compose.ssh.yml")
@@ -100,7 +121,13 @@ if [ "$rebuild" = true ]; then
 else
     # --build is a cache hit unless the Dockerfile changed; `up` recreates the
     # container only when its image or config changed (e.g. toggling --docker).
-    "${COMPOSE[@]}" up --detach --build
+    up_args=(--detach --build)
+    # git rewrote .git/config as a new file; a running container's bind mount
+    # still shows the old one until it's recreated.
+    if [ "$identity_changed" = true ]; then
+        up_args+=(--force-recreate)
+    fi
+    "${COMPOSE[@]}" up "${up_args[@]}"
 fi
 
 if [ "$docker_mode" = true ]; then

@@ -220,5 +220,7 @@ be the first real build. Don't claim it works when it hasn't been built.
 
 Summarise for the user: what was added for this repo, any choices you made for
 them, what you verified and what you couldn't, and the first-run steps
-(`.devcontainer/start.sh`, then `claude` and log in once). Don't commit unless
-they ask.
+(`.devcontainer/start.sh`, which asks for a git `user.name` and `user.email`
+if the repo's `.git/config` lacks them, then `claude` and log in once). Mention
+that `start.sh -- <command>` runs a command instead of a shell, e.g.
+`start.sh -- claude --resume`. Don't commit unless they ask.
