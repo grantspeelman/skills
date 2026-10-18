@@ -93,8 +93,9 @@ decision. Tell the user where the file is once, when you create it.
 
 ### Asking a question
 
-Ask each as **multiple choice** with `AskUserQuestion`. Put the framing in the
-message before the call, since option descriptions are too short to hold it:
+Ask each as **multiple choice**, with `AskUserQuestion` in Claude Code or a
+numbered list of options where there's no such tool. Put the framing in the
+message before the question, since option descriptions are too short to hold it:
 
 ```
 ❓ **Q4 — <question title>** _(2/5 this round)_: <the context, the trade-off,

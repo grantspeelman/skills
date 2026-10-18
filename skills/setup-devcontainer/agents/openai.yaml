@@ -1,0 +1,4 @@
+# Codex: run only when asked for by name ($setup-devcontainer), like
+# disable-model-invocation in SKILL.md does for Claude Code.
+policy:
+  allow_implicit_invocation: false
