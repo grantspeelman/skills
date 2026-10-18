@@ -151,4 +151,9 @@ printf -v stop_command '%q ' "${COMPOSE[@]}"
 echo -e "${GREEN}The container outlives this shell: rerun this script to get back in.${NC}"
 echo -e "${GREEN}Stop it with: ${stop_command}down${NC}"
 
+# Herdr can't see the agent inside the container, only `docker compose`, so
+# name it on this host-side process. Set only for agents, never for a shell.
+case "$(basename "${command[0]}")" in
+    claude) export HERDR_AGENT=claude ;;
+esac
 exec "${COMPOSE[@]}" exec --user vscode "$SERVICE" "${command[@]}"
