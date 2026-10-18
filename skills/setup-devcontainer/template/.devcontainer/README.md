@@ -31,7 +31,7 @@ shares, so it survives rebuilds and covers both entry points.
 |---|---|
 | **Files** | Only this checkout, at `/workspace`, with the parts the host executes mounted read-only (see below). No host home directory, `~/.ssh` or `~/.claude`. |
 | **SSH** | Your host ssh-agent, forwarded as a socket. `start.sh` starts an agent and runs `ssh-add` if it needs to. The container can use your key to sign, but it can't read or copy the key. GitHub's host keys are pinned in the image. |
-| **GitHub API** | `GH_TOKEN=...` in `~/.config/__PROJECT__/gh.env` on the host, outside the checkout. A token exported in your shell isn't passed in. Use a fine-grained token scoped to this repo. The `env_file` entry needs Docker Compose 2.24 or later. |
+| **GitHub API** | `GH_TOKEN=...` in `~/.config/__PROJECT_REPO__/gh.env` on the host, outside the checkout. A token exported in your shell isn't passed in. Use a fine-grained token scoped to this repo. The `env_file` entry needs Docker Compose 2.24 or later. |
 | **Claude** | Its own config (the volume above), with `permissions.defaultMode = bypassPermissions`. Your host Claude settings are untouched. |
 | **Network** | Unrestricted outbound. There's no egress firewall. |
 

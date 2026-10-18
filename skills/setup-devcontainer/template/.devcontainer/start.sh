@@ -105,7 +105,7 @@ if [ "$(agent_status)" -eq 1 ]; then
 fi
 export HOST_SSH_AUTH_SOCK="$SSH_AUTH_SOCK"
 
-GH_ENV_FILE="$HOME/.config/__PROJECT__/gh.env"
+GH_ENV_FILE="$HOME/.config/__PROJECT_REPO__/gh.env"
 if [ ! -f "$GH_ENV_FILE" ]; then
     echo -e "${YELLOW}No $GH_ENV_FILE (GH_TOKEN=...): gh inside the container will be unauthenticated.${NC}"
 elif [ -n "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then

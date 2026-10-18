@@ -26,7 +26,7 @@ services:
     # repo is enough. No `environment:` pass-through on purpose: an unset
     # pass-through overrides the file with nothing.
     env_file:
-      - path: ${HOME}/.config/__PROJECT__/gh.env
+      - path: ${HOME}/.config/__PROJECT_REPO__/gh.env
         required: false
 # __PROJECT_SERVICES__
 

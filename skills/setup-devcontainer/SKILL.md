@@ -83,7 +83,9 @@ service only some developers run) before building.
 <this skill's dir>/scripts/render.sh "$(git rev-parse --show-toplevel)" <slug>
 ```
 
-It copies the template and fills in the slug. If it exits 3 it has listed the
+It copies the template and fills in the slug, and the repo's `owner/name`
+from its `origin` remote (used for the host's `~/.config/<owner>/<name>/gh.env`;
+the slug if there's no remote). If it exits 3 it has listed the
 files that already exist and written nothing; go back to step 1's question for
 those. Use the files the user chose to merge into as references, and render
 the rest by hand from `template/`.

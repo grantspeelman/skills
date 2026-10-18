@@ -37,7 +37,7 @@ else
 fi
 
 if [ -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
-  echo "Neither GH_TOKEN nor GITHUB_TOKEN is set: gh (PRs, issues) is unauthenticated. Put GH_TOKEN=... in ~/.config/skills/gh.env on the host and rerun start.sh."
+  echo "Neither GH_TOKEN nor GITHUB_TOKEN is set: gh (PRs, issues) is unauthenticated. Put GH_TOKEN=... in ~/.config/grantspeelman/skills/gh.env on the host and rerun start.sh."
 fi
 
 if [ ! -s "${config_dir}/.credentials.json" ]; then
