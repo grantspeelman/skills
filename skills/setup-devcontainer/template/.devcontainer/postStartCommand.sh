@@ -17,20 +17,8 @@ mv "${settings}.tmp" "${settings}"
 # __PROJECT_SETUP__
 
 # Status, so a missing credential shows up now rather than mid-task.
-if [ -z "${SSH_AUTH_SOCK:-}" ]; then
-  echo "No SSH agent forwarded: git push over SSH will not work."
-else
-  agent_status=0
-  ssh-add -l >/dev/null 2>&1 || agent_status=$?
-  case "${agent_status}" in
-    0) ;;
-    1) echo "SSH agent reachable but holds no keys: run 'ssh-add' on the host." ;;
-    *) echo "SSH agent socket is dead (host agent restarted?): run .devcontainer/start.sh --rebuild." ;;
-  esac
-fi
-
 if [ -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
-  echo "Neither GH_TOKEN nor GITHUB_TOKEN is set: gh (PRs, issues) is unauthenticated. Put GH_TOKEN=... in ~/.config/__PROJECT_REPO__/gh.env on the host and rerun start.sh."
+  echo "Neither GH_TOKEN nor GITHUB_TOKEN is set: git push and gh (PRs, issues) will not work. Put GH_TOKEN=... in ~/.config/__PROJECT_REPO__/gh.env on the host and rerun start.sh."
 fi
 
 if [ ! -s "${config_dir}/.credentials.json" ]; then

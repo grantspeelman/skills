@@ -19,3 +19,4 @@ This repo is a Claude Code and Codex plugin (`gps-skills`) that packages a set o
 - Skills are shared by Claude Code and Codex. Claude-only frontmatter (`disable-model-invocation`, `argument-hint`) needs a Codex equivalent in `agents/openai.yaml`, and don't rely on a Claude-only tool without saying what to do without it.
 - `skills/setup-devcontainer/template/` is a generic copy of `.devcontainer/`, `lefthook.yml` and the devcontainer CI workflow. When you change those, make the same change in the template. `ssh_known_hosts` is left out of the template on purpose; the skill fetches it.
 - Don't commit secrets, customer data or PII. Use synthetic data in examples.
+- Keep pull request titles and descriptions simple and high level, with a mermaid diagram where it helps explain the change.

@@ -3,8 +3,8 @@
 # .git/hooks and .git/config are mounted read-only on top, so a prompt-injected
 # command in here can't plant code that host git later runs. .devcontainer/ is
 # left writable so agents can maintain it; review changes before running them.
-# start.sh layers compose.ssh.yml (agent forwarding) and, with --docker,
-# compose.docker.yml (privileged nested Docker) on top of it.
+# No ssh-agent is forwarded: git reaches GitHub over HTTPS with GH_TOKEN. With
+# --docker, start.sh layers compose.docker.yml (privileged nested Docker) on top.
 services:
   app:
     build:
@@ -21,9 +21,10 @@ services:
       - ../.git/hooks:/workspace/.git/hooks:ro
       - ../.git/config:/workspace/.git/config:ro
       - claude-config:/home/vscode/.claude
-    # GH_TOKEN=... for gh, from a host file outside the checkout, where the
-    # container can't read or change it. A fine-grained token scoped to this
-    # repo is enough. No `environment:` pass-through on purpose: an unset
+    # GH_TOKEN=... for git push and gh, from a host file outside the checkout,
+    # where the container can't read or change it. It's the container's only
+    # GitHub credential: a fine-grained token scoped to this repo, with no
+    # Administration permission (see the README). No `environment:` pass-through on purpose: an unset
     # pass-through overrides the file with nothing.
     env_file:
       - path: ${HOME}/.config/grantspeelman/skills/gh.env

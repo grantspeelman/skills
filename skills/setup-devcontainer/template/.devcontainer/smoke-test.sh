@@ -1,17 +1,16 @@
 #!/bin/bash
 # End-to-end check of the dev container through the same compose files start.sh
-# uses: builds for the calling user's UID, forwards a throwaway ssh-agent, runs
-# the post-start setup, then exercises nested Docker and dropping back out of it.
-# Runs in CI (.github/workflows/devcontainer-ci.yml) and locally alike. It uses
-# its own compose project, a throwaway Claude config volume (never your real
-# login's) and a temporary key in a fresh agent, and removes them all on exit.
+# uses: builds for the calling user's UID, runs the post-start setup, checks git
+# reaches GitHub only through GH_TOKEN, then exercises nested Docker and dropping
+# back out of it. Runs in CI (.github/workflows/devcontainer-ci.yml) and locally
+# alike. It uses its own compose project and a throwaway Claude config volume
+# (never your real login's), and removes them on exit.
 set -euo pipefail
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT="__PROJECT__-smoke-$$"
 BASE=(docker compose -p "$PROJECT"
     -f "$SCRIPT_DIR/docker-compose.yml"
-    -f "$SCRIPT_DIR/compose.ssh.yml"
     -f "$SCRIPT_DIR/smoke-test.compose.yml")
 DOCKER=("${BASE[@]}" -f "$SCRIPT_DIR/compose.docker.yml")
 in_container() { "${DOCKER[@]}" exec -T --user vscode app bash -c "$1"; }
@@ -19,19 +18,11 @@ in_container() { "${DOCKER[@]}" exec -T --user vscode app bash -c "$1"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "ok - $*"; }
 
-tmp="$(mktemp -d)"
 cleanup() {
     "${DOCKER[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
-    [ -n "${SSH_AGENT_PID:-}" ] && kill "$SSH_AGENT_PID" 2>/dev/null || true
-    rm -rf "$tmp"
 }
 trap cleanup EXIT
 
-# A fresh agent holding a throwaway key: never the caller's own agent or keys.
-eval "$(ssh-agent -a "$tmp/agent.sock")" >/dev/null
-ssh-keygen -q -t ed25519 -N '' -f "$tmp/key"
-ssh-add -q "$tmp/key"
-export HOST_SSH_AUTH_SOCK="$SSH_AUTH_SOCK"
 export USER_UID="$(id -u)" USER_GID="$(id -g)"
 export SMOKE_CLAUDE_VOLUME="$PROJECT-claude-config"
 
@@ -51,8 +42,16 @@ pass "postStartCommand.sh ran"
 [ "$(in_container 'id -u')" = "$USER_UID" ] || fail "vscode UID does not match host UID $USER_UID"
 pass "vscode runs as host UID $USER_UID"
 
-[ "$(in_container 'ssh-add -l | wc -l')" = 1 ] || fail "forwarded agent does not hold the test key"
-pass "ssh-agent forwarded"
+in_container '[ -z "${SSH_AUTH_SOCK:-}" ] && ! ssh-add -l >/dev/null 2>&1' || fail "an ssh-agent reaches the container"
+pass "no ssh-agent forwarded"
+
+[ "$(in_container 'git ls-remote --get-url git@github.com:octo/repo.git')" = https://github.com/octo/repo.git ] \
+    || fail "git does not rewrite GitHub SSH remotes to HTTPS"
+pass "GitHub SSH remotes go over HTTPS"
+
+in_container 'printf "protocol=https\nhost=github.com\n\n" | GH_TOKEN=smoke-token GIT_TERMINAL_PROMPT=0 git credential fill' \
+    | grep -qx 'password=smoke-token' || fail "git does not authenticate to GitHub with GH_TOKEN"
+pass "git authenticates to GitHub with GH_TOKEN"
 
 [ "$(in_container 'jq -r .permissions.defaultMode "$CLAUDE_CONFIG_DIR/settings.json"')" = bypassPermissions ] \
     || fail "bypassPermissions not set"
