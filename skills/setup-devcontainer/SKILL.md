@@ -43,7 +43,8 @@ volume.
 ### 1. Check where you are
 
 - Work from the repo root (`git rev-parse --show-toplevel`).
-- The project slug is `$ARGUMENTS` if given. Otherwise derive it from the repo
+- The project slug is `$ARGUMENTS` if given (in Codex, a slug the user typed
+  after the skill name). Otherwise derive it from the repo
   name: lowercase, with anything other than `a-z0-9_-` replaced by `-`. It names
   the image, the Claude config volume, the compose project and the agent socket.
 - If `.devcontainer/`, `lefthook.yml` or `.github/workflows/devcontainer-ci.yml`
