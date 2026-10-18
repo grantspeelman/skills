@@ -2,7 +2,8 @@
 # from the host but this checkout: no ~/.ssh, no ~/.claude, no home directory.
 # .git/hooks and .git/config are mounted read-only on top, so a prompt-injected
 # command in here can't plant code that host git later runs. .devcontainer/ is
-# left writable so agents can maintain it; review changes before running them.
+# read-only for the same reason: start.sh and these files run on the host. With
+# --maintain, start.sh layers compose.maintain.yml to make it writable.
 # No ssh-agent is forwarded: git reaches GitHub over HTTPS with GH_TOKEN. With
 # --docker, start.sh layers compose.docker.yml (privileged nested Docker) on top.
 services:
@@ -20,6 +21,8 @@ services:
       # own hooks come from the image; see core.hooksPath in the Dockerfile.
       - ../.git/hooks:/workspace/.git/hooks:ro
       - ../.git/config:/workspace/.git/config:ro
+      # start.sh, the compose files and the Dockerfile run on the host.
+      - ../.devcontainer:/workspace/.devcontainer:ro
       - claude-config:/home/vscode/.claude
     # GH_TOKEN=... for git push and gh, from a host file outside the checkout,
     # where the container can't read or change it. It's the container's only

@@ -1,0 +1,10 @@
+# Opt-in writable .devcontainer/ (start.sh --maintain), for when Claude works on
+# the dev container itself. start.sh, these compose files and the Dockerfile run
+# on the host, so in this mode a prompt injection can plant code there that runs
+# the next time you start the container. Review the changes before then.
+services:
+  app:
+    volumes:
+      # Same target as the read-only mount in docker-compose.yml, so it
+      # replaces that one.
+      - ../.devcontainer:/workspace/.devcontainer

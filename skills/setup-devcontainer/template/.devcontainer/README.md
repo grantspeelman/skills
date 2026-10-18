@@ -15,6 +15,7 @@ container keeps running after you exit.
 |-------------|--------|
 | `--rebuild` | Run `git pull --ff-only`, then rebuild the image from scratch. This is also how Claude Code gets upgraded. Stops if the pull fails, e.g. the branch has no upstream or has diverged. |
 | `--docker`  | Privileged mode with nested Docker. Read [Nested Docker](#nested-docker) first. |
+| `--maintain` | Make `.devcontainer/` writable, to work on the dev container itself. Read [Read-only parts of the checkout](#read-only-parts-of-the-checkout) first. |
 | `-- CMD...` | Run `CMD` in the container instead of a shell, e.g. `start.sh --rebuild -- claude --resume`. Must come last. |
 
 **VS Code:** *Dev Containers: Reopen in Container*. VS Code builds its own
@@ -85,6 +86,7 @@ later executes. Those are mounted read-only:
 |---|---|
 | `.git/hooks/` | Host git runs these on commit, checkout, merge and so on. |
 | `.git/config` | Host git runs commands it names: `core.fsmonitor`, `core.sshCommand`, aliases, filters. |
+| `.devcontainer/` | You run `start.sh` on the host, and Docker and VS Code use the compose files, `Dockerfile` and `devcontainer.json`. |
 
 Without `sudo`, not even root inside the container can remount them read-write.
 
@@ -96,16 +98,22 @@ What this costs:
   the rest on the host.
 - After changing `.git/config` on the host, restart the container to pick it
   up: git replaces the file, and the mount keeps showing the old one.
+- `git pull`, `checkout`, `switch` and `rebase` fail inside when they would
+  change `.devcontainer/`. Run them on the host, where `start.sh --rebuild`
+  pulls for you.
 - The checkout must be a regular clone. In a git worktree `.git` is a file,
   and the mounts fail.
 
+To have Claude work on the dev container itself, start it with
+`start.sh --maintain`. That makes `.devcontainer/` writable until the next
+`start.sh` without the flag, which recreates the container read-only. VS Code
+never uses this mode. While it's on, a prompt injection can plant code there
+that runs on your host, so review the changes before you next run `start.sh`.
+
 Everything else in the checkout is still writable, and some of it can reach
-your machine another way. `.devcontainer/` is the big one: it's writable so
-agents can maintain it, but `start.sh` and the compose files run on the host,
-so a prompt injection could plant code there that runs the next time you start
-the container. Review changes to `.devcontainer/`, `.claude/`, `CLAUDE.md`,
-`.vscode/` and CI workflows before you run `start.sh`, Claude, VS Code or a
-build against them on the host.
+your machine another way. Review changes to `.claude/`, `CLAUDE.md`, `.vscode/`
+and CI workflows before you run Claude, VS Code or a build against them on the
+host.
 
 ## Project toolchain
 
@@ -138,7 +146,7 @@ a version test there, so when you bump a pin in the `Dockerfile` (version and
 SHA-256), update its test in the same commit.
 
 `smoke-test.sh` starts a real container the way `start.sh` does and checks it
-end to end: no SSH agent and git over HTTPS with the token, the read-only mounts and missing `sudo`, Claude settings, the project toolchain, the commit hook,
+end to end: no SSH agent and git over HTTPS with the token, the read-only mounts and missing `sudo`, `--maintain`, Claude settings, the project toolchain, the commit hook,
 nested Docker, and switching back to unprivileged. It runs in about 30 seconds
 and cleans up after itself, using a throwaway Claude config volume so your login
 is never touched.

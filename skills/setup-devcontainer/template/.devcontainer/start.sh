@@ -3,6 +3,7 @@
 #   --rebuild  git pull --ff-only, then rebuild the image from scratch (also how
 #              Claude Code gets upgraded)
 #   --docker   privileged mode with nested Docker; see compose.docker.yml first
+#   --maintain writable .devcontainer/, to work on the dev container itself
 #   -- CMD...  run CMD in the container instead of bash, e.g. -- claude --resume
 set -euo pipefail
 
@@ -17,17 +18,19 @@ PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 original_args=("$@")
 rebuild=false
 docker_mode=false
+maintain_mode=false
 command=(bash)
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --rebuild) rebuild=true ;;
         --docker) docker_mode=true ;;
+        --maintain) maintain_mode=true ;;
         --)
             shift
             if [ "$#" -gt 0 ]; then command=("$@"); fi
             break
             ;;
-        *) echo "Usage: $(basename "$0") [--rebuild] [--docker] [-- CMD [ARG...]]" >&2; exit 64 ;;
+        *) echo "Usage: $(basename "$0") [--rebuild] [--docker] [--maintain] [-- CMD [ARG...]]" >&2; exit 64 ;;
     esac
     shift
 done
@@ -83,6 +86,9 @@ COMPOSE=(docker compose -p "$COMPOSE_PROJECT"
 if [ "$docker_mode" = true ]; then
     COMPOSE+=(-f "$SCRIPT_DIR/compose.docker.yml")
 fi
+if [ "$maintain_mode" = true ]; then
+    COMPOSE+=(-f "$SCRIPT_DIR/compose.maintain.yml")
+fi
 
 USER_UID="$(id -u)"
 USER_GID="$(id -g)"
@@ -106,6 +112,9 @@ fi
 if [ "$docker_mode" = true ]; then
     echo -e "${YELLOW}--docker: the container runs PRIVILEGED. With dockerd inside, it is not a boundary between Claude and this host.${NC}"
 fi
+if [ "$maintain_mode" = true ]; then
+    echo -e "${YELLOW}--maintain: .devcontainer/ is writable, and this host runs it. Review changes to it before you next run start.sh.${NC}"
+fi
 
 # ── Build and start ──────────────────────────────────────────────────────────
 if [ "$rebuild" = true ]; then
@@ -114,7 +123,8 @@ if [ "$rebuild" = true ]; then
     "${COMPOSE[@]}" up --detach --force-recreate
 else
     # --build is a cache hit unless the Dockerfile changed; `up` recreates the
-    # container only when its image or config changed (e.g. toggling --docker).
+    # container only when its image or config changed (e.g. toggling --docker or
+    # --maintain).
     up_args=(--detach --build)
     # git rewrote .git/config as a new file; a running container's bind mount
     # still shows the old one until it's recreated.
