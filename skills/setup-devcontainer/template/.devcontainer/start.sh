@@ -2,6 +2,7 @@
 # Build, start and attach to the dev container from a plain terminal.
 #   --rebuild  rebuild the image from scratch (also how Claude Code gets upgraded)
 #   --docker   privileged mode with nested Docker; see compose.docker.yml first
+#   -- CMD...  run CMD in the container instead of bash, e.g. -- claude --resume
 set -euo pipefail
 
 GREEN='\033[0;32m'
@@ -14,12 +15,19 @@ PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 
 rebuild=false
 docker_mode=false
-for arg in "$@"; do
-    case "$arg" in
+command=(bash)
+while [ "$#" -gt 0 ]; do
+    case "$1" in
         --rebuild) rebuild=true ;;
         --docker) docker_mode=true ;;
-        *) echo "Usage: $(basename "$0") [--rebuild] [--docker]" >&2; exit 64 ;;
+        --)
+            shift
+            if [ "$#" -gt 0 ]; then command=("$@"); fi
+            break
+            ;;
+        *) echo "Usage: $(basename "$0") [--rebuild] [--docker] [-- CMD [ARG...]]" >&2; exit 64 ;;
     esac
+    shift
 done
 
 # One container per checkout: key the compose project to the checkout path, so
@@ -29,6 +37,34 @@ checkout_slug="$(printf '%s' "$(basename "$PROJECT_ROOT")" | tr '[:upper:]' '[:l
 checkout_digest="$(printf '%s' "$PROJECT_ROOT" | cksum | cut -d ' ' -f 1)"
 COMPOSE_PROJECT="__PROJECT__-${checkout_slug}-${checkout_digest}"
 SERVICE="app"
+# docker-compose.yml mounts .git/hooks and .git/config read-only, which needs a
+# real .git directory; in a worktree .git is a file pointing elsewhere.
+if [ ! -d "$PROJECT_ROOT/.git" ]; then
+    echo -e "${RED}$PROJECT_ROOT/.git is not a directory (a git worktree?). The dev container needs a regular clone.${NC}" >&2
+    exit 1
+fi
+
+# ── Git identity: the container sees .git/config, not your ~/.gitconfig ─────
+identity_changed=false
+for key in user.name user.email; do
+    if [ -n "$(git -C "$PROJECT_ROOT" config --local --get "$key" || true)" ]; then
+        continue
+    fi
+    if [ ! -t 0 ]; then
+        echo -e "${YELLOW}$key is not set in this repo's .git/config: commits inside the container will fail.${NC}"
+        continue
+    fi
+    default="$(git -C "$PROJECT_ROOT" config --global --get "$key" || true)"
+    read -r -p "Git $key for this repo${default:+ [$default]}: " value
+    value="${value:-$default}"
+    if [ -z "$value" ]; then
+        echo -e "${RED}$key is required for commits inside the container.${NC}" >&2
+        exit 1
+    fi
+    git -C "$PROJECT_ROOT" config --local "$key" "$value"
+    identity_changed=true
+done
+
 COMPOSE=(docker compose -p "$COMPOSE_PROJECT"
     -f "$SCRIPT_DIR/docker-compose.yml"
     -f "$SCRIPT_DIR/compose.ssh.yml")
@@ -69,12 +105,15 @@ if [ "$(agent_status)" -eq 1 ]; then
 fi
 export HOST_SSH_AUTH_SOCK="$SSH_AUTH_SOCK"
 
-if [ -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
-    echo -e "${YELLOW}Neither GH_TOKEN nor GITHUB_TOKEN is set: gh inside the container will be unauthenticated.${NC}"
+GH_ENV_FILE="$HOME/.config/__PROJECT_REPO__/gh.env"
+if [ ! -f "$GH_ENV_FILE" ]; then
+    echo -e "${YELLOW}No $GH_ENV_FILE (GH_TOKEN=...): gh inside the container will be unauthenticated.${NC}"
+elif [ -n "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
+    echo -e "${YELLOW}GH_TOKEN/GITHUB_TOKEN in this shell isn't passed in; the container uses $GH_ENV_FILE.${NC}"
 fi
 
 if [ "$docker_mode" = true ]; then
-    echo -e "${YELLOW}--docker: the container runs PRIVILEGED. With sudo inside, it is not a boundary between Claude and this host.${NC}"
+    echo -e "${YELLOW}--docker: the container runs PRIVILEGED. With dockerd inside, it is not a boundary between Claude and this host.${NC}"
 fi
 
 # ── Build and start ──────────────────────────────────────────────────────────
@@ -85,7 +124,13 @@ if [ "$rebuild" = true ]; then
 else
     # --build is a cache hit unless the Dockerfile changed; `up` recreates the
     # container only when its image or config changed (e.g. toggling --docker).
-    "${COMPOSE[@]}" up --detach --build
+    up_args=(--detach --build)
+    # git rewrote .git/config as a new file; a running container's bind mount
+    # still shows the old one until it's recreated.
+    if [ "$identity_changed" = true ]; then
+        up_args+=(--force-recreate)
+    fi
+    "${COMPOSE[@]}" up "${up_args[@]}"
 fi
 
 if [ "$docker_mode" = true ]; then
@@ -109,4 +154,9 @@ printf -v stop_command '%q ' "${COMPOSE[@]}"
 echo -e "${GREEN}The container outlives this shell: rerun this script to get back in.${NC}"
 echo -e "${GREEN}Stop it with: ${stop_command}down${NC}"
 
-exec "${COMPOSE[@]}" exec --user vscode "$SERVICE" bash
+# Herdr can't see the agent inside the container, only `docker compose`, so
+# name it on this host-side process. Set only for agents, never for a shell.
+case "$(basename "${command[0]}")" in
+    claude) export HERDR_AGENT=claude ;;
+esac
+exec "${COMPOSE[@]}" exec --user vscode "$SERVICE" "${command[@]}"

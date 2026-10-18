@@ -6,11 +6,6 @@ set -euo pipefail
 
 config_dir="${CLAUDE_CONFIG_DIR:?CLAUDE_CONFIG_DIR is set in the Dockerfile}"
 
-# Git hooks: gitleaks on every commit (see /lefthook.yml).
-if [ -d /workspace/.git ]; then
-  lefthook install >/dev/null
-fi
-
 # Permission prompts off by default. This is the container's own Claude config,
 # so the host's settings are untouched. Only the one key is set, leaving any
 # other settings you have added in the volume alone.
@@ -42,7 +37,7 @@ else
 fi
 
 if [ -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
-  echo "Neither GH_TOKEN nor GITHUB_TOKEN is set: gh (PRs, issues) is unauthenticated."
+  echo "Neither GH_TOKEN nor GITHUB_TOKEN is set: gh (PRs, issues) is unauthenticated. Put GH_TOKEN=... in ~/.config/grantspeelman/skills/gh.env on the host and rerun start.sh."
 fi
 
 if [ ! -s "${config_dir}/.credentials.json" ]; then

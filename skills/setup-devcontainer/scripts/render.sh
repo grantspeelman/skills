@@ -1,6 +1,8 @@
 #!/bin/bash
 # Copy the dev container template into a target repo and fill in its name.
 #   render.sh <target-repo> <project-slug>
+# __PROJECT__ becomes the slug, and __PROJECT_REPO__ the repo's owner/name from
+# its origin remote (the slug if there's no remote).
 # Refuses to overwrite: if any template file already exists in the target, it
 # lists them and exits 3 without writing anything. Leaves the __PROJECT_*__
 # tailoring markers in place for the skill to fill in. It does not create
@@ -21,6 +23,13 @@ if ! [[ "$slug" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
     exit 64
 fi
 
+repo="$(git -C "$target" remote get-url origin 2>/dev/null || true)"
+repo="${repo%.git}"
+repo="$(printf '%s' "$repo" | sed -E 's#^.*[:/]([^/:]+/[^/:]+)$#\1#')"
+if ! [[ "$repo" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
+    repo="$slug"
+fi
+
 mapfile -t files < <(cd "$TEMPLATE" && find . -type f | sed 's|^\./||' | sort)
 
 conflicts=()
@@ -35,7 +44,7 @@ fi
 
 for f in "${files[@]}"; do
     mkdir -p "$(dirname "$target/$f")"
-    sed "s/__PROJECT__/${slug}/g" "$TEMPLATE/$f" > "$target/$f"
+    sed -e "s|__PROJECT_REPO__|${repo}|g" -e "s|__PROJECT__|${slug}|g" "$TEMPLATE/$f" > "$target/$f"
     [ -x "$TEMPLATE/$f" ] && chmod +x "$target/$f"
     echo "$f"
 done

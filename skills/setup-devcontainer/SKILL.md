@@ -20,18 +20,23 @@ security posture as it is and add what this repo needs.
 
 - `.devcontainer/` with a `Dockerfile` (Ubuntu, Node for Claude Code, Python,
   `gh`, `gitleaks`, `lefthook`, Docker for opt-in nesting), compose files,
-  `start.sh`, `postStartCommand.sh`, `container-structure-test.yaml`,
-  `smoke-test.sh` and a `README.md`. It doesn't include `ssh_known_hosts`;
+  `start.sh`, `postStartCommand.sh`, `git-hooks/` (baked into the image),
+  `container-structure-test.yaml`, `smoke-test.sh` and a `README.md`. It doesn't include `ssh_known_hosts`;
   step 5 creates that file from the git host's published keys.
 - `lefthook.yml`, which runs gitleaks on staged changes before each commit.
 - `.github/workflows/devcontainer-ci.yml`, which builds the image, runs the
   structure test and smoke test, and scans the full history for secrets.
 
 Leave these properties alone unless the user asks you to change them: only the
-checkout is mounted, no host `~/.ssh` or `~/.claude`; the agent is forwarded
-rather than the key; GitHub host keys are pinned; downloaded binaries are
-pinned and SHA-256 checked; nested Docker stays opt-in and privileged only with
-`--docker`; the Claude config is a named volume.
+checkout is mounted, no host `~/.ssh` or `~/.claude`; `.git/hooks` and
+`.git/config` are mounted read-only, so nothing in the container can plant
+code that host git later runs (`.devcontainer/` stays writable so agents can
+maintain it, and the README tells the user to review changes to it); there's no `sudo`, so those
+mounts hold even against root; git hooks come from the image via
+`core.hooksPath`; the agent is forwarded rather than the key; GitHub host keys
+are pinned; downloaded binaries are pinned and SHA-256 checked; nested Docker
+stays opt-in and privileged only with `--docker`; the Claude config is a named
+volume.
 
 ## Steps
 
@@ -78,7 +83,9 @@ service only some developers run) before building.
 <this skill's dir>/scripts/render.sh "$(git rev-parse --show-toplevel)" <slug>
 ```
 
-It copies the template and fills in the slug. If it exits 3 it has listed the
+It copies the template and fills in the slug, and the repo's `owner/name`
+from its `origin` remote (used for the host's `~/.config/<owner>/<name>/gh.env`;
+the slug if there's no remote). If it exits 3 it has listed the
 files that already exist and written nothing; go back to step 1's question for
 those. Use the files the user chose to merge into as references, and render
 the rest by hand from `template/`.
@@ -133,7 +140,9 @@ host unless the user asks.
 
 **Dependencies (`# __PROJECT_SETUP__`).** Install project dependencies with the
 lockfile-respecting command (`npm ci`, `pnpm install --frozen-lockfile`,
-`bundle install`, `uv sync --frozen`, `go mod download` …). It runs on every
+`bundle install`, `uv sync --frozen`, `go mod download` …). It runs as
+`vscode` with no `sudo`, so anything that needs root (system packages, global
+installs) belongs in the `Dockerfile`, not here. It runs on every
 start, so make it cheap when nothing changed: skip it when a hash of the
 lockfile matches one stored from the last run. If the dependency directory is
 large and inside the checkout (e.g. `node_modules`), consider a named volume
@@ -156,8 +165,14 @@ together.
 
 **lefthook.** If the repo already uses lefthook, husky, pre-commit or another
 hook manager, don't install a second one: add the gitleaks command to the
-existing setup and drop `lefthook.yml` and `lefthook install` from the template,
-then tell the user.
+existing setup and drop `lefthook.yml` from the template, then tell the user.
+The image's hook (`.devcontainer/git-hooks/pre-commit`) runs only lefthook's
+`pre-commit`. If the repo's lefthook config uses other hooks, link those names
+to the same script in the `Dockerfile`. Another hook manager either needs its
+own entry point there or sets a local `core.hooksPath`. Warn the user when the
+hooks live in the tracked tree (`.husky/`, `.githooks/`): the container can
+write them, and host git runs them, which undoes the read-only `.git/hooks`.
+Either mount that directory read-only too or say why not.
 
 ### 5. Pin the git host's SSH keys
 
@@ -207,5 +222,7 @@ be the first real build. Don't claim it works when it hasn't been built.
 
 Summarise for the user: what was added for this repo, any choices you made for
 them, what you verified and what you couldn't, and the first-run steps
-(`.devcontainer/start.sh`, then `claude` and log in once). Don't commit unless
-they ask.
+(`.devcontainer/start.sh`, which asks for a git `user.name` and `user.email`
+if the repo's `.git/config` lacks them, then `claude` and log in once). Mention
+that `start.sh -- <command>` runs a command instead of a shell, e.g.
+`start.sh -- claude --resume`. Don't commit unless they ask.
