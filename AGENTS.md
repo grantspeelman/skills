@@ -16,6 +16,7 @@ This repo is a Claude Code and Codex plugin (`gps-skills`) that packages a set o
 - Each skill needs a `SKILL.md` with `name` and `description` frontmatter. The name must match the folder name.
 - When adding, removing or renaming a skill, update the list in `README.md`.
 - Keep the `name`, `version` and `description` in sync across the Claude and Codex manifests.
+- When a change touches anything under `skills/`, bump `version` in `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`, keeping them the same. Use semver: patch for fixes, minor for new skills or features, major for breaking changes such as a removed or renamed skill.
 - Skills are shared by Claude Code and Codex. Claude-only frontmatter (`disable-model-invocation`, `argument-hint`) needs a Codex equivalent in `agents/openai.yaml`, and don't rely on a Claude-only tool without saying what to do without it.
 - `skills/setup-devcontainer/template/` is a generic copy of `.devcontainer/`, `lefthook.yml` and the devcontainer CI workflow. When you change those, make the same change in the template. `ssh_known_hosts` is left out of the template on purpose; the skill fetches it.
 - Don't commit secrets, customer data or PII. Use synthetic data in examples.

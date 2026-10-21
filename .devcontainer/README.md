@@ -13,7 +13,7 @@ container keeps running after you exit.
 
 | Flag        | Effect |
 |-------------|--------|
-| `--rebuild` | Run `git pull --ff-only`, then rebuild the image from scratch. This is also how Claude Code gets upgraded. Stops if the pull fails, e.g. the branch has no upstream or has diverged. |
+| `--rebuild` | Run `git pull --ff-only`, then rebuild the image from scratch. This is also how Claude Code gets upgraded. Stops if the pull fails, e.g. the branch has no upstream or has diverged. If the pull changes the `.devcontainer/` files to anything other than what's on the remote's default branch, it shows the diff and asks before running it, since this host runs that code (with no terminal to ask on, it stops). |
 | `--docker`  | Privileged mode with nested Docker. Read [Nested Docker](#nested-docker) first. |
 | `--maintain` | Make `.devcontainer/` writable, to work on the dev container itself. Read [Read-only parts of the checkout](#read-only-parts-of-the-checkout) first. |
 | `-- CMD...` | Run `CMD` in the container instead of a shell, e.g. `start.sh --rebuild -- claude --resume`. Must come last. |
