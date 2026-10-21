@@ -1,0 +1,20 @@
+# start.sh's default mode: the container works in its own clone, which start.sh
+# seeds once from a git bundle of the host checkout. Nothing it writes reaches a
+# file the host runs; its work leaves through GitHub, like anyone else's.
+services:
+  app:
+    volumes:
+      - workspace:/workspace
+      - claude-config:/home/vscode/.claude
+
+volumes:
+  # Named per compose project, so each checkout gets its own clone. Unpushed
+  # work lives only here: `docker compose down -v` deletes it.
+  workspace:
+  # A fixed name, so the Claude login is shared by every default-mode container
+  # for this repo, across checkouts and rebuilds. External, so `down -v` leaves
+  # it alone; start.sh creates it. smoke-test.sh swaps in a throwaway volume, so
+  # a test never touches your login.
+  claude-config:
+    name: ${SMOKE_CLAUDE_VOLUME:-__PROJECT__-claude-config}
+    external: true
