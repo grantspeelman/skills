@@ -12,6 +12,8 @@
 #     (through `script`), stops on "n" and re-seeds on "y"
 #   • --mount-workspace: a plain mount with nothing on top, writable .git/config,
 #     no Claude config volume
+#   • seeding from a detached HEAD, and stopping on a shallow checkout
+#   • the .devcontainer/ check every start runs
 # Runs in CI (.github/workflows/devcontainer-ci.yml) and locally alike. It uses
 # its own compose project and a throwaway Claude config volume (never your real
 # login's), and removes them on exit.
@@ -41,8 +43,15 @@ mounts() {
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "ok - $*"; }
 
+# Separate projects for the detached and shallow checkouts below.
+OTHER_PROJECTS=("$SMOKE_COMPOSE_PROJECT-detached" "$SMOKE_COMPOSE_PROJECT-shallow")
+
 cleanup() {
     "${DOCKER[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
+    for project in "${OTHER_PROJECTS[@]}"; do
+        docker compose -p "$project" -f "$CHECKOUT/.devcontainer/docker-compose.yml" \
+            -f "$CHECKOUT/.devcontainer/compose.clone.yml" down --volumes >/dev/null 2>&1 || true
+    done
     # External, so `down --volumes` leaves it.
     docker volume rm "$SMOKE_CLAUDE_VOLUME" >/dev/null 2>&1 || true
     rm -rf "$WORK"
@@ -61,12 +70,28 @@ host_git commit -q --no-verify -m "smoke: pushed"
 # ref stands in for what GitHub has.
 host_git remote add origin https://github.invalid/octo/smoke.git
 host_git update-ref refs/remotes/origin/main HEAD
+# What start.sh checks .devcontainer/ against on every start.
+host_git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+# A stash must not reach the clone, not even as an object.
+echo "smoke stash $$" > "$CHECKOUT/smoke-stash.txt"
+host_git add smoke-stash.txt
+host_git stash push -q
+stash_blob="$(echo "smoke stash $$" | git hash-object --stdin)"
 host_git switch -q -c smoke-branch
 host_git commit -q --no-verify --allow-empty -m "smoke: unpushed on the host"
 host_git config user.name "Smoke Host"
 host_git config user.email host@example.com
 echo "not committed" > "$CHECKOUT/smoke-untracked.txt"
 host_head="$(git -C "$CHECKOUT" rev-parse HEAD)"
+
+echo "# the .devcontainer/ check"
+echo "# smoke" >> "$CHECKOUT/.devcontainer/compose.mount.yml"
+if "$START" -- true </dev/null >"$WORK/check.log" 2>&1; then
+    cat "$WORK/check.log" >&2; fail "start.sh ran a .devcontainer/ that differs from origin/main"
+fi
+grep -q 'differs from origin/main' "$WORK/check.log" || { cat "$WORK/check.log" >&2; fail "start.sh did not say why it stopped"; }
+git -C "$CHECKOUT" checkout -q -- .devcontainer/compose.mount.yml
+pass "start.sh stops on a .devcontainer/ that differs from the default branch"
 
 echo "# default mode, privileged, with nested Docker"
 "$START" --docker -- true </dev/null
@@ -130,6 +155,8 @@ in_container '[ -z "$(git -C /workspace status --porcelain)" ]' || fail "the see
 pass "clone seeded from the checkout: branch, HEAD, origin, remote branches"
 in_container '[ ! -e /workspace/smoke-untracked.txt ]' || fail "an untracked host file reached the clone"
 pass "untracked host files stay out"
+in_container "! git -C /workspace cat-file -e $stash_blob 2>/dev/null" || fail "a host stash reached the clone"
+pass "host stashes stay out"
 
 in_container '
     set -e; cd /workspace
@@ -141,6 +168,8 @@ pass "git config and commits work in the clone, apart from the checkout"
 container_head="$(in_container 'git -C /workspace rev-parse HEAD')"
 
 echo "# back to unprivileged"
+# The post-start setup runs from the image, so the clone can't break it.
+in_container 'rm /workspace/.devcontainer/postStartCommand.sh'
 "$START" -- true </dev/null
 [ "$(docker inspect "$("${BASE[@]}" ps -q app)" --format '{{.HostConfig.Privileged}}')" = false ] \
     || fail "container still privileged without --docker"
@@ -151,6 +180,8 @@ in_container '! command -v sudo' >/dev/null || fail "sudo is installed"
 pass "no sudo"
 [ "$(in_container 'git -C /workspace rev-parse HEAD')" = "$container_head" ] || fail "the clone was seeded again"
 pass "the clone survives the recreate and isn't seeded again"
+pass "start.sh runs the image's post-start setup, not the clone's"
+in_container 'git -C /workspace checkout -q -- .devcontainer/postStartCommand.sh'
 
 echo "# --reset"
 if "$START" --reset -- true </dev/null >"$WORK/reset.log" 2>&1; then
@@ -201,5 +232,26 @@ in_container 'git -C /workspace config --local smoke.mounted yes' || fail "can't
 pass ".git/config is writable, and shared with the host"
 [ "$(in_container 'readlink "$CLAUDE_CONFIG_DIR/skills"')" = /workspace/skills ] || fail "skills link missing"
 pass "skills live-linked"
+
+echo "# other checkouts"
+# Each gets its own project, and so its own container and clone.
+other() { SMOKE_COMPOSE_PROJECT="$2" "$1/.devcontainer/start.sh" -- true </dev/null; }
+git clone -q "$CHECKOUT" "$WORK/detached"
+git -C "$WORK/detached" checkout -q --detach
+git -C "$WORK/detached" -c user.name=smoke -c user.email=smoke@example.com \
+    commit -q --no-verify --allow-empty -m "smoke: detached"
+other "$WORK/detached" "${OTHER_PROJECTS[0]}"
+[ "$(docker compose -p "${OTHER_PROJECTS[0]}" -f "$CHECKOUT/.devcontainer/docker-compose.yml" \
+        -f "$CHECKOUT/.devcontainer/compose.clone.yml" \
+        exec -T --user vscode app git -C /workspace rev-parse HEAD </dev/null)" \
+    = "$(git -C "$WORK/detached" rev-parse HEAD)" ] || fail "the clone is not at the checkout's detached HEAD"
+pass "seeds from a detached HEAD"
+
+git clone -q --depth 1 "file://$CHECKOUT" "$WORK/shallow"
+if other "$WORK/shallow" "${OTHER_PROJECTS[1]}" >"$WORK/shallow.log" 2>&1; then
+    cat "$WORK/shallow.log" >&2; fail "start.sh seeded from a shallow checkout"
+fi
+grep -q 'shallow' "$WORK/shallow.log" || { cat "$WORK/shallow.log" >&2; fail "start.sh did not say the checkout is shallow"; }
+pass "stops on a shallow checkout"
 
 echo "all smoke tests passed"

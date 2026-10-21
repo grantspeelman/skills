@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Runs as vscode on every container start, from both VS Code and start.sh.
+# Runs as vscode on every container start, from both VS Code and start.sh. The
+# Dockerfile bakes it into the image as /usr/local/bin/devcontainer-post-start,
+# and that copy is what runs: an edit here takes a rebuild.
 # Everything here is idempotent: it runs on every start, and in start.sh's
 # default mode the Claude config dir is a volume that outlives containers, so
 # this script meets its own earlier output.

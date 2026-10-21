@@ -175,6 +175,11 @@ WORKDIR /workspace
 
 COPY .devcontainer/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+# The post-start setup runs from the image, not from /workspace, so a clone (or
+# mounted checkout) that lacks it or breaks it can't stop start.sh. Root-owned,
+# so Claude can't change it either; edits reach it with a rebuild.
+COPY .devcontainer/postStartCommand.sh /usr/local/bin/devcontainer-post-start
+RUN chmod 755 /usr/local/bin/devcontainer-post-start
 # The entrypoint starts as root (for optional dockerd) and gosu-drops to vscode itself.
 # hadolint ignore=DL3002
 USER root

@@ -63,6 +63,12 @@ fileExistenceTests:
     shouldExist: true
     isExecutableBy: any
 
+  - name: post-start setup baked in, root-owned, so the clone can't change it
+    path: /usr/local/bin/devcontainer-post-start
+    shouldExist: true
+    uid: 0
+    permissions: '-rwxr-xr-x'
+
 fileContentTests:
   - name: vscode user in /etc/passwd with correct home and shell
     path: /etc/passwd

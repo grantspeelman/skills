@@ -16,10 +16,10 @@ keeps running after you exit.
 
 | Flag        | Effect |
 |-------------|--------|
-| `--rebuild` | Run `git pull --ff-only` in this checkout, then rebuild the image from scratch. This is also how Claude Code gets upgraded. Stops if the pull fails, e.g. the branch has no upstream or has diverged. If the pull changes the `.devcontainer/` files to anything other than what's on the remote's default branch, it shows the diff and asks before running it, since this host runs that code (with no terminal to ask on, it stops). It doesn't touch the container's clone. |
+| `--rebuild` | Run `git pull --ff-only` in this checkout, then rebuild the image from scratch. This is also how Claude Code gets upgraded. Stops if the pull fails, e.g. the branch has no upstream or has diverged. If the pull changes the `.devcontainer/` files to anything other than what's on the remote's default branch, it shows the diff and asks before running it, since this host runs that code (with no terminal to ask on, it stops). After a `--mount-workspace` or VS Code session this check protects nothing: the container could have changed the files on disk, `.git/config` and `.git/hooks`, which it relies on. It doesn't touch the container's clone. |
 | `--docker`  | Privileged mode with nested Docker. Works with either way of getting `/workspace`. Read [Nested Docker](#nested-docker) first. |
 | `--mount-workspace` | Mount this checkout read-write at `/workspace` instead of using the container's own clone. Read [Two ways to get /workspace](#two-ways-to-get-workspace) first. |
-| `--reset`   | Delete the container's clone and seed it again from this checkout. It lists what in the clone isn't on GitHub first, and asks (with no terminal to ask on, it stops). Can't be combined with `--mount-workspace`. |
+| `--reset`   | Delete the container's clone and seed it again from this checkout. It lists what in the clone isn't on GitHub (commits, tags, notes, stashes, uncommitted files) first, and asks (with no terminal to ask on, it stops). Can't be combined with `--mount-workspace`. |
 | `-- CMD...` | Run `CMD` in the container instead of a shell, e.g. `start.sh --rebuild -- claude --resume`. Must come last. |
 
 Switching between the clone and `--mount-workspace`, or in and out of
@@ -62,19 +62,33 @@ the host, and that depends on where `/workspace` comes from.
 
 `start.sh` gives the container a clone of the repo in a volume of its own, one
 per checkout. On the first run, when the volume is empty, it streams a git
-bundle of this checkout (every branch and tag, unpushed ones included) into the
-container and clones from it there, on the branch this checkout is on, with
-`origin` set to this checkout's `origin`. Data only goes in: nothing in the
-container can write to this checkout or its `.git`.
+bundle of this checkout into the container and clones from it there. The
+bundle holds `HEAD`, every branch and tag (unpushed ones included) and
+`origin`'s branches as this checkout last fetched them, and nothing else. The
+clone is on the branch (or detached commit) this checkout is on, with `origin`
+set to this checkout's `origin`, minus any credentials in the URL. Data only
+goes in: nothing in the container can write to this checkout or its `.git`.
+A shallow or partial (`--filter`) checkout can't seed a full clone, so
+`start.sh` stops and says so.
 
 That happens once. Later runs leave the clone alone, and the container fetches
 from GitHub itself. Its work leaves the same way: pushed to a branch and merged
 through a PR. To see it on the host, `git fetch` or `git pull` here.
 
+**Before you run `start.sh` on a branch the container pushed, review
+`.devcontainer/` and the other files this host runs** (see the table under
+[--mount-workspace and VS Code](#--mount-workspace-and-vs-code)). A pushed
+branch can change any of them. `start.sh` checks `.devcontainer/` on every
+start: if it differs from the remote's default branch as this checkout last
+fetched it (`refs/remotes/origin/HEAD`, no network), it shows the diff and
+asks, and with no terminal to ask on it stops. It doesn't check the rest, and
+it also asks while you have your own uncommitted changes there.
+
 What this costs:
 
 - Files git doesn't track, such as `skills/synced/` or a `.env`, aren't in the
-  bundle, so they never reach the clone. Create them inside if you need them.
+  bundle, so they never reach the clone. Neither do stashes, notes or other
+  remotes' branches. Create what you need inside.
 - Work in the clone that isn't pushed exists only in the volume.
   `docker compose ... down -v` (`--volumes`) deletes it, as does `--reset`.
   Plain `down`, `--rebuild` and switching modes keep it. The Claude login volume
@@ -84,8 +98,10 @@ What this costs:
 
 To start the clone over, run `start.sh --reset`. It fetches from GitHub inside
 the container, then lists every commit that isn't on a remote branch, any
-stashes, and uncommitted, untracked and ignored files, and asks before deleting
-anything. Without a terminal to ask on, it stops and changes nothing.
+tags that origin doesn't have, notes, stashes, and uncommitted, untracked and
+ignored files, and asks before deleting anything. If it can't fetch or can't
+check something, it says so rather than reporting nothing. Without a terminal
+to ask on, it stops and changes nothing.
 
 To have Claude work on the dev container itself, there's nothing to switch on:
 it edits `.devcontainer/` in its clone and opens a PR. Once that's merged,
@@ -106,7 +122,10 @@ container can change any file in it, including files your host later runs:
 | `.claude/`, `CLAUDE.md`, `.vscode/`, CI workflows, build scripts | Claude, VS Code, CI and your build tools on the host. |
 
 So a prompt injection in this mode can plant code that runs on your machine the
-next time you run git, `start.sh`, VS Code or a build here. Use it when you
+next time you run git, `start.sh`, VS Code or a build here. `start.sh`
+doesn't check `.devcontainer/` in this mode, and after a session in it, neither
+that check nor `--rebuild`'s protects anything: the container could have
+changed the `.git/config`, hooks and files they rely on. Use it when you
 want to edit the same files as Claude, and review what changed before you run
 anything against the checkout on the host. If you edit files in VS Code
 yourself, you're accepting these risks.
@@ -189,7 +208,9 @@ SHA-256), update its test in the same commit.
 
 `smoke-test.sh` runs `start.sh` from a throwaway copy of the checkout and checks
 it end to end: the seeded clone with nothing from the host mounted, seeding only
-once, `--reset` (stopping without a terminal), `--mount-workspace` as a plain
+once, seeding from a detached `HEAD`, leaving stashes out, stopping on a
+shallow checkout, the `.devcontainer/` check, `--reset` (stopping without a
+terminal), `--mount-workspace` as a plain
 mount with no Claude config volume, no SSH agent and git over HTTPS with the
 token, no `sudo`, Claude settings, the skills link, the commit hook, nested
 Docker, and switching back to unprivileged. It cleans up after itself, using

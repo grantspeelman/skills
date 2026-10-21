@@ -21,7 +21,7 @@ security posture as it is and add what this repo needs.
 
 - `.devcontainer/` with a `Dockerfile` (Ubuntu, Node for Claude Code, Python,
   `gh`, `gitleaks`, `lefthook`, Docker for opt-in nesting), compose files,
-  `start.sh`, `postStartCommand.sh`, `git-hooks/` (baked into the image),
+  `start.sh`, `postStartCommand.sh` and `git-hooks/` (both baked into the image),
   `container-structure-test.yaml`, `smoke-test.sh` and a `README.md`. It doesn't include `ssh_known_hosts`;
   step 5 creates that file from the git host's published keys.
 - `lefthook.yml`, which runs gitleaks on staged changes before each commit.
@@ -41,7 +41,10 @@ with the repo-scoped `GH_TOKEN` (gh as credential helper, SSH remotes rewritten
 in `/etc/gitconfig`); GitHub host keys are pinned for VS Code's own agent
 forwarding; downloaded binaries are pinned and SHA-256 checked; nested Docker
 stays opt-in and privileged only with `--docker`; `start.sh --reset` lists
-unpushed work and asks before it discards the clone.
+unpushed work and asks before it discards the clone; every `start.sh` run
+compares `.devcontainer/` with the default branch and asks before running
+anything different; the post-start setup runs from the image, so the clone
+can't change or break it (edits to `postStartCommand.sh` take a rebuild).
 
 ## Steps
 
