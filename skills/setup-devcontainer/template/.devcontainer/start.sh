@@ -281,11 +281,13 @@ fi
 # ── The container's own clone ────────────────────────────────────────────────
 if [ "$mount_mode" = false ]; then
     # seeded: a finished seed. empty: a new volume. other: anything else, such
-    # as an interrupted seed; only --reset clears it.
+    # as an interrupted seed or a volume that can't be read; only --reset
+    # clears it. empty needs a listing that worked: a failed one also prints
+    # nothing, and a failed seed then deletes what's there.
     # shellcheck disable=SC2016 # expanded in the container
     state="$(in_app bash -c '
         if [ -n "$(git -C /workspace config --local --get devcontainer.seeded 2>/dev/null)" ]; then echo seeded
-        elif [ -z "$(ls -A /workspace)" ]; then echo empty
+        elif listing="$(ls -A /workspace)" && [ -z "$listing" ]; then echo empty
         else echo other; fi' </dev/null)"
 
     # Before --reset deletes anything: a checkout that can't seed would leave
@@ -300,7 +302,12 @@ if [ "$mount_mode" = false ]; then
             echo -e "${RED}This checkout is shallow, so it can't seed a full clone. Run git fetch --unshallow here, then start.sh again.${NC}" >&2
             exit 1
         fi
-        if [ -n "$(git -C "$PROJECT_ROOT" config --get extensions.partialClone || true)" ]; then
+        # A filtered clone can record it per remote, without extensions.partialClone.
+        partial="$(git -C "$PROJECT_ROOT" config --get-regexp '^(extensions\.partialclone|remote\..*\.partialclonefilter)$' || true)"
+        # Any promisor value but a plain false counts, so a malformed one fails closed.
+        promisors="$(git -C "$PROJECT_ROOT" config --get-regexp '^remote\..*\.promisor$' || true)"
+        if [ -n "$partial" ] || { [ -n "$promisors" ] \
+            && grep -qviE '^[^ ]+ (false|no|off|0)$' <<<"$promisors"; }; then
             echo -e "${RED}This checkout is a partial clone (--filter), so it lacks objects the seed needs. Run start.sh from a full clone of the repo.${NC}" >&2
             exit 1
         fi
@@ -343,14 +350,15 @@ if [ "$mount_mode" = false ]; then
                 problem "No origin remote: nothing here is on GitHub."
             fi
             # HEAD only when it names a commit: an unborn one fails the lot.
-            tips=(--branches --tags)
+            # --reflog, so work dropped by a reset or a deleted branch counts too.
+            tips=(--branches --tags --reflog)
             if git rev-parse --verify --quiet HEAD >/dev/null; then tips=(HEAD "${tips[@]}"); fi
             # stderr kept apart, so a warning is never taken for the count.
             errors="$(mktemp)"
             if count="$(git rev-list --count "${tips[@]}" --not --remotes=origin 2>"$errors")" \
                 && [[ "$count" =~ ^[0-9]+$ ]]; then
                 if [ "$count" -gt 0 ]; then
-                    check "$count commit(s) not on origin (newest 20):" \
+                    check "$count commit(s) not on origin, reflogs and stashes included (newest 20):" \
                         git log --oneline --decorate -n 20 "${tips[@]}" --not --remotes=origin
                 fi
             else
@@ -449,6 +457,8 @@ if [ "$mount_mode" = false ]; then
             if ! git -C "$PROJECT_ROOT" bundle create -q - --branches --tags --remotes=origin HEAD \
                 | in_app bash -c "$seed" seed "$seed_branch" "$origin_url"; then
                 # Clear it, so the next run seeds again instead of stopping.
+                # Only the failed seed is deleted: state is empty only after a
+                # listing that worked found nothing, or a confirmed --reset.
                 "${COMPOSE[@]}" exec -T --user root "$SERVICE" find /workspace -mindepth 1 -delete </dev/null || true
                 echo -e "${RED}Seeding the container's clone failed (above); it's cleared, so the next run tries again.${NC}" >&2
                 exit 1
@@ -458,7 +468,7 @@ if [ "$mount_mode" = false ]; then
             fi
             ;;
         *)
-            echo -e "${RED}The container's /workspace has files but no finished clone (an interrupted seed?). Rerun with --reset to clear it and seed again.${NC}" >&2
+            echo -e "${RED}The container's /workspace isn't a finished clone (an interrupted seed?), or couldn't be read (errors above). Rerun with --reset to clear it and seed again.${NC}" >&2
             exit 1
             ;;
     esac
