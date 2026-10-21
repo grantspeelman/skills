@@ -325,13 +325,15 @@ if [ "$mount_mode" = false ]; then
         # notes, other remotes) reaches the container, not even as loose
         # objects. No lazy fetch, so a missing object fails instead of being
         # fetched from a promisor remote.
-        # It holds every branch, so it goes in a private directory (git writes
-        # it through a .lock it renames, so the umask is what keeps the file
-        # private), inside this checkout's git dir: the repo's own filesystem,
+        # It holds every branch, so it goes in a 0700 directory: that is what
+        # keeps it private, since git may chmod the file itself (e.g. with
+        # core.sharedRepository); the umask is only belt and braces. The
+        # directory is in this checkout's git dir: the repo's own filesystem,
         # where /tmp is often a small tmpfs, and out of the container's sight.
         # git ignores what it doesn't know there, so a leftover from a crash
-        # only takes up space.
-        bundle_dir="$(umask 077 && mktemp -d "$(git -C "$PROJECT_ROOT" rev-parse --absolute-git-dir)/devcontainer-seed.XXXXXX")"
+        # only takes up space. If the git dir isn't writable, TMPDIR it is.
+        git_dir="$(git -C "$PROJECT_ROOT" rev-parse --absolute-git-dir)"
+        bundle_dir="$(umask 077 && { mktemp -d "$git_dir/devcontainer-seed.XXXXXX" 2>/dev/null || mktemp -d; })"
         trap 'rm -rf "$bundle_dir"' EXIT
         bundle="$bundle_dir/seed.bundle"
         # verify says "is okay" on success; only its complaints are shown.

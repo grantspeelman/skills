@@ -289,10 +289,12 @@ pass "stops on a shallow checkout"
 git clone -q "$CHECKOUT" "$WORK/broken"
 echo "smoke broken $$" > "$WORK/broken/smoke-broken.txt"
 git -C "$WORK/broken" add smoke-broken.txt
+# No auto gc or maintenance, so the blob stays loose for the rm below.
 git -C "$WORK/broken" -c user.name=smoke -c user.email=smoke@example.com \
-    commit -q --no-verify -m "smoke: broken"
+    -c gc.auto=0 -c maintenance.auto=false commit -q --no-verify -m "smoke: broken"
 broken_blob="$(git -C "$WORK/broken" rev-parse HEAD:smoke-broken.txt)"
 rm "$WORK/broken/.git/objects/${broken_blob:0:2}/${broken_blob:2}"
+if git -C "$WORK/broken" cat-file -e "$broken_blob" 2>/dev/null; then fail "the broken checkout still has the blob"; fi
 if other "$WORK/broken" "${OTHER_PROJECTS[2]}" >"$WORK/broken.log" 2>&1; then
     cat "$WORK/broken.log" >&2; fail "start.sh seeded from a checkout missing an object"
 fi
