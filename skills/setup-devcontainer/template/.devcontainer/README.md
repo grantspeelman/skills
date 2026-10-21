@@ -19,7 +19,7 @@ keeps running after you exit.
 | `--rebuild` | Run `git pull --ff-only` in this checkout, then rebuild the image from scratch. This is also how Claude Code gets upgraded. Stops if the pull fails, e.g. the branch has no upstream or has diverged. If the pull changes the `.devcontainer/` files to anything other than what's on the remote's default branch, it shows the diff and asks before running it, since this host runs that code (with no terminal to ask on, it stops). After a `--mount-workspace` or VS Code session this check protects nothing: the container could have changed the files on disk, `.git/config` and `.git/hooks`, which it relies on. It doesn't touch the container's clone. |
 | `--docker`  | Privileged mode with nested Docker. Works with either way of getting `/workspace`. Read [Nested Docker](#nested-docker) first. |
 | `--mount-workspace` | Mount this checkout read-write at `/workspace` instead of using the container's own clone. Read [Two ways to get /workspace](#two-ways-to-get-workspace) first. |
-| `--reset`   | Delete the container's clone and seed it again from this checkout. It lists what in the clone isn't on GitHub (commits, tags, notes, stashes, uncommitted files) first, and asks (with no terminal to ask on, it stops). Can't be combined with `--mount-workspace`. |
+| `--reset`   | Delete the container's clone and seed it again from this checkout. It lists what in the clone isn't on GitHub (commits, commits only in reflogs, tags, notes, stashes, uncommitted files) first, and asks (with no terminal to ask on, it stops). Can't be combined with `--mount-workspace`. |
 | `-- CMD...` | Run `CMD` in the container instead of a shell, e.g. `start.sh --rebuild -- claude --resume`. Must come last. |
 
 Switching between the clone and `--mount-workspace`, or in and out of
@@ -218,8 +218,8 @@ SHA-256), update its test in the same commit.
 `smoke-test.sh` runs `start.sh` from a throwaway copy of the checkout and checks
 it end to end: the seeded clone with nothing from the host mounted, seeding only
 once, seeding from a detached `HEAD`, leaving stashes out, stopping on a
-shallow checkout, the `.devcontainer/` check, `--reset` (stopping without a
-terminal), `--mount-workspace` as a plain
+shallow checkout, the `.devcontainer/` check, `--reset` (listing work kept
+only in a reflog, stopping without a terminal, refusing a partial clone), `--mount-workspace` as a plain
 mount with no Claude config volume, no SSH agent and git over HTTPS with the
 token, no `sudo`, Claude settings, the project toolchain, the commit hook, nested
 Docker, and switching back to unprivileged. It cleans up after itself, using

@@ -280,14 +280,22 @@ fi
 
 # ── The container's own clone ────────────────────────────────────────────────
 if [ "$mount_mode" = false ]; then
-    # seeded: a finished seed. empty: a new volume. other: anything else, such
-    # as an interrupted seed or a volume that can't be read; only --reset
-    # clears it. empty needs a listing that worked: a failed one also prints
-    # nothing, and a failed seed then deletes what's there.
+    # seeded: a finished seed. empty: a new volume. unreadable: a clone whose
+    # config git can't read (corrupt, or dubious ownership after a UID change).
+    # other: anything else, such as an interrupted seed or a volume that can't
+    # be listed. Only --reset clears the last two. empty needs a listing that
+    # worked: a failed one also prints nothing, and a failed seed then deletes
+    # what's there. git's and ls's errors go to stderr, so they're shown.
     # shellcheck disable=SC2016 # expanded in the container
     state="$(in_app bash -c '
-        if [ -n "$(git -C /workspace config --local --get devcontainer.seeded 2>/dev/null)" ]; then echo seeded
-        elif listing="$(ls -A /workspace)" && [ -z "$listing" ]; then echo empty
+        if [ -e /workspace/.git ]; then
+            # Exit 1 is "not set"; anything above is git failing to read it.
+            seeded="$(git -C /workspace config --local --get devcontainer.seeded)"
+            status=$?
+            if [ "$status" -gt 1 ]; then echo unreadable; exit 0; fi
+            if [ -n "$seeded" ]; then echo seeded; exit 0; fi
+        fi
+        if listing="$(ls -A /workspace)" && [ -z "$listing" ]; then echo empty
         else echo other; fi' </dev/null)"
 
     # Before --reset deletes anything: a checkout that can't seed would leave
@@ -309,6 +317,20 @@ if [ "$mount_mode" = false ]; then
         if [ -n "$partial" ] || { [ -n "$promisors" ] \
             && grep -qviE '^[^ ]+ (false|no|off|0)$' <<<"$promisors"; }; then
             echo -e "${RED}This checkout is a partial clone (--filter), so it lacks objects the seed needs. Run start.sh from a full clone of the repo.${NC}" >&2
+            exit 1
+        fi
+        # The seed itself, built and verified now, so a checkout missing
+        # objects the config doesn't own up to stops before --reset deletes
+        # anything. Only what the clone fetches, so nothing else (stashes,
+        # notes, other remotes) reaches the container, not even as loose
+        # objects. No lazy fetch, so a missing object fails instead of being
+        # fetched from a promisor remote.
+        bundle="$(mktemp)"
+        trap 'rm -f "$bundle"' EXIT
+        if ! GIT_NO_LAZY_FETCH=1 git -C "$PROJECT_ROOT" bundle create -q "$bundle" \
+                --branches --tags --remotes=origin HEAD \
+            || ! git -C "$PROJECT_ROOT" bundle verify -q "$bundle" >/dev/null; then
+            echo -e "${RED}Couldn't bundle this checkout to seed the container's clone from (above). The clone is unchanged.${NC}" >&2
             exit 1
         fi
     fi
@@ -350,19 +372,36 @@ if [ "$mount_mode" = false ]; then
                 problem "No origin remote: nothing here is on GitHub."
             fi
             # HEAD only when it names a commit: an unborn one fails the lot.
-            # --reflog, so work dropped by a reset or a deleted branch counts too.
-            tips=(--branches --tags --reflog)
+            tips=(--branches --tags)
             if git rev-parse --verify --quiet HEAD >/dev/null; then tips=(HEAD "${tips[@]}"); fi
             # stderr kept apart, so a warning is never taken for the count.
             errors="$(mktemp)"
             if count="$(git rev-list --count "${tips[@]}" --not --remotes=origin 2>"$errors")" \
                 && [[ "$count" =~ ^[0-9]+$ ]]; then
                 if [ "$count" -gt 0 ]; then
-                    check "$count commit(s) not on origin, reflogs and stashes included (newest 20):" \
+                    check "$count commit(s) on branches, tags or HEAD not on origin (newest 20):" \
                         git log --oneline --decorate -n 20 "${tips[@]}" --not --remotes=origin
                 fi
             else
                 problem "Could not check for commits that are not on origin: $count $(cat "$errors")"
+            fi
+            # Reflogs catch work dropped by a reset, or on a deleted branch that
+            # was checked out here, but also every old version a rebase, amend or
+            # squash-merge left behind; so a section of their own. The stashes
+            # section covers stash commits (each one, its index and untracked
+            # commits), so they are left out here.
+            if stashes="$(if git rev-parse --verify --quiet refs/stash >/dev/null; then
+                        git log -g --format="%H %P" refs/stash; fi 2>"$errors")" \
+                && reflogged="$(git rev-list --reflog --not "${tips[@]}" --remotes=origin 2>"$errors")"; then
+                reflogged="$(grep -vxF -f <(awk "{ print \$1; print \$3; print \$4 }" <<<"$stashes") <<<"$reflogged" || true)"
+                if [ -n "$reflogged" ]; then
+                    # rev-list lists newest first; log sorts those 20 by date again.
+                    mapfile -t newest < <(head -n 20 <<<"$reflogged")
+                    check "$(grep -c . <<<"$reflogged") commit(s) only in reflogs: old versions from a rebase, amend or squash-merge, or work dropped by a reset or a deleted branch (newest 20):" \
+                        git log --oneline --no-walk "${newest[@]}"
+                fi
+            else
+                problem "Could not check the reflogs: $(cat "$errors")"
             fi
             rm -f "$errors"
             # A tag counts as pushed only when origin has the same name at the same object.
@@ -452,10 +491,7 @@ if [ "$mount_mode" = false ]; then
                 # Last, so an interrupted seed is never taken for a finished one.
                 git config devcontainer.seeded true
             '
-            # Only what the clone fetches, so nothing else (stashes, notes, other
-            # remotes) reaches the container, not even as loose objects.
-            if ! git -C "$PROJECT_ROOT" bundle create -q - --branches --tags --remotes=origin HEAD \
-                | in_app bash -c "$seed" seed "$seed_branch" "$origin_url"; then
+            if ! in_app bash -c "$seed" seed "$seed_branch" "$origin_url" <"$bundle"; then
                 # Clear it, so the next run seeds again instead of stopping.
                 # Only the failed seed is deleted: state is empty only after a
                 # listing that worked found nothing, or a confirmed --reset.
@@ -463,12 +499,18 @@ if [ "$mount_mode" = false ]; then
                 echo -e "${RED}Seeding the container's clone failed (above); it's cleared, so the next run tries again.${NC}" >&2
                 exit 1
             fi
+            # Now: the exec at the end replaces this shell, so the trap never runs.
+            rm -f "$bundle"
             if [ -z "$origin_url" ]; then
                 echo -e "${YELLOW}This checkout has no origin remote, so neither does the clone: work in it can't be pushed.${NC}"
             fi
             ;;
+        unreadable)
+            echo -e "${RED}The container's clone exists, but git couldn't read its config (error above). Fix that inside the container if you can; as a last resort, rerun with --reset, which deletes the clone and seeds it again.${NC}" >&2
+            exit 1
+            ;;
         *)
-            echo -e "${RED}The container's /workspace isn't a finished clone (an interrupted seed?), or couldn't be read (errors above). Rerun with --reset to clear it and seed again.${NC}" >&2
+            echo -e "${RED}The container's /workspace isn't a finished clone (an interrupted seed?), or couldn't be listed (errors above). Rerun with --reset to clear it and seed again.${NC}" >&2
             exit 1
             ;;
     esac

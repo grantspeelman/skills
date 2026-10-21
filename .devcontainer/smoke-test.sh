@@ -8,8 +8,9 @@
 #     the commit hook
 #   • default mode: the clone seeded from the checkout, no host mount, git config
 #     writable inside, seeding only once, dropping back out of --docker
-#   • --reset: lists unpushed work and stops without a terminal; with one
-#     (through `script`), stops on "n" and re-seeds on "y"
+#   • --reset: lists unpushed work, including a commit only in a reflog, and
+#     stops without a terminal; stops before deleting on a host with a promisor
+#     remote; with a terminal (through `script`), stops on "n" and re-seeds on "y"
 #   • --mount-workspace: a plain mount with nothing on top, writable .git/config,
 #     no Claude config volume
 #   • seeding from a detached HEAD, and stopping on a shallow checkout
@@ -184,12 +185,33 @@ pass "start.sh runs the image's post-start setup, not the clone's"
 in_container 'git -C /workspace checkout -q -- .devcontainer/postStartCommand.sh'
 
 echo "# --reset"
+# Work a reset dropped is only in the reflogs, and must still be listed.
+in_container '
+    set -e; cd /workspace
+    git checkout -q --detach origin/main
+    git commit -q --allow-empty -m "smoke: dropped by a reset"
+    git reset -q --hard origin/main
+    git checkout -q smoke-branch' || fail "can't make a commit only in a reflog"
 if "$START" --reset -- true </dev/null >"$WORK/reset.log" 2>&1; then
     cat "$WORK/reset.log" >&2; fail "--reset went ahead without a terminal"
 fi
 grep -q 'smoke: container work' "$WORK/reset.log" || { cat "$WORK/reset.log" >&2; fail "--reset did not list the unpushed commit"; }
+grep -q 'smoke: dropped by a reset' "$WORK/reset.log" || { cat "$WORK/reset.log" >&2; fail "--reset did not list the commit only in a reflog"; }
 [ "$(in_container 'git -C /workspace rev-parse HEAD')" = "$container_head" ] || fail "--reset changed the clone without asking"
-pass "--reset lists unpushed work and stops without a terminal"
+pass "--reset lists unpushed work, reflogs included, and stops without a terminal"
+
+# The partial-clone check runs before the listing, the prompt and the delete.
+host_git config remote.origin.promisor true
+if "$START" --reset -- true </dev/null >"$WORK/reset.log" 2>&1; then
+    cat "$WORK/reset.log" >&2; fail "--reset went ahead from a partial clone"
+fi
+host_git config --unset remote.origin.promisor
+grep -q 'partial clone' "$WORK/reset.log" || { cat "$WORK/reset.log" >&2; fail "--reset did not say the checkout is a partial clone"; }
+if grep -q "Checking what isn't on GitHub" "$WORK/reset.log"; then
+    cat "$WORK/reset.log" >&2; fail "--reset got as far as the listing from a partial clone"
+fi
+[ "$(in_container 'git -C /workspace rev-parse HEAD')" = "$container_head" ] || fail "--reset changed the clone from a partial clone"
+pass "--reset stops before deleting when the checkout has a promisor remote"
 
 # util-linux script(1) gives start.sh a terminal to prompt on; skip where it's
 # a different script(1).
