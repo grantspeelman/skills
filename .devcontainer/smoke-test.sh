@@ -1,44 +1,79 @@
 #!/bin/bash
-# End-to-end check of the dev container through the same compose files start.sh
-# uses: builds for the calling user's UID, runs the post-start setup, checks git
-# reaches GitHub only through GH_TOKEN, then exercises nested Docker and dropping
-# back out of it, the read-only paths, and making .devcontainer/ writable with
-# compose.maintain.yml. Runs in CI (.github/workflows/devcontainer-ci.yml) and locally
-# alike. It uses its own compose project and a throwaway Claude config volume
-# (never your real login's), and removes them on exit.
+# End-to-end check of the dev container through start.sh itself. It runs from a
+# throwaway copy of this checkout, a fresh repo with a known pushed commit, an
+# unpushed one and an untracked file, so seeding has something definite to work
+# with and your own checkout is never touched. It covers:
+#   • --docker (default mode): nested Docker, plus the image's own setup: no
+#     ssh-agent, git over HTTPS with GH_TOKEN, Claude settings, the skills link,
+#     the commit hook
+#   • default mode: the clone seeded from the checkout, no host mount, git config
+#     writable inside, seeding only once, dropping back out of --docker
+#   • --reset: lists unpushed work and stops without a terminal; with one
+#     (through `script`), stops on "n" and re-seeds on "y"
+#   • --mount-workspace: a plain mount with nothing on top, writable .git/config,
+#     no Claude config volume
+# Runs in CI (.github/workflows/devcontainer-ci.yml) and locally alike. It uses
+# its own compose project and a throwaway Claude config volume (never your real
+# login's), and removes them on exit.
 set -euo pipefail
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PROJECT="skills-smoke-$$"
-BASE=(docker compose -p "$PROJECT"
-    -f "$SCRIPT_DIR/docker-compose.yml"
-    -f "$SCRIPT_DIR/smoke-test.compose.yml")
-DOCKER=("${BASE[@]}" -f "$SCRIPT_DIR/compose.docker.yml")
-in_container() { "${DOCKER[@]}" exec -T --user vscode app bash -c "$1"; }
+REPO_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
+# start.sh reads both, so its containers and volumes are this run's own.
+export SMOKE_COMPOSE_PROJECT="skills-smoke-$$"
+export SMOKE_CLAUDE_VOLUME="$SMOKE_COMPOSE_PROJECT-claude-config"
+export USER_UID="$(id -u)" USER_GID="$(id -g)"
+
+WORK="$(mktemp -d)"
+CHECKOUT="$WORK/checkout"
+START="$CHECKOUT/.devcontainer/start.sh"
+BASE=(docker compose -p "$SMOKE_COMPOSE_PROJECT" -f "$CHECKOUT/.devcontainer/docker-compose.yml")
+CLONE=("${BASE[@]}" -f "$CHECKOUT/.devcontainer/compose.clone.yml")
+DOCKER=("${CLONE[@]}" -f "$CHECKOUT/.devcontainer/compose.docker.yml")
+in_container() { "${CLONE[@]}" exec -T --user vscode app bash -c "$1" </dev/null; }
+# What's mounted where in the running container: "type destination name", a line
+# each. Read into a variable before grepping, so grep -q can't SIGPIPE it.
+mounts() {
+    docker inspect "$("${BASE[@]}" ps -q app)" \
+        --format '{{range .Mounts}}{{.Type}} {{.Destination}} {{.Name}}{{"\n"}}{{end}}'
+}
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "ok - $*"; }
 
 cleanup() {
     "${DOCKER[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
+    # External, so `down --volumes` leaves it.
+    docker volume rm "$SMOKE_CLAUDE_VOLUME" >/dev/null 2>&1 || true
+    rm -rf "$WORK"
 }
 trap cleanup EXIT
 
-export USER_UID="$(id -u)" USER_GID="$(id -g)"
-export SMOKE_CLAUDE_VOLUME="$PROJECT-claude-config"
+# The working tree as it is, uncommitted changes included, without its history.
+mkdir "$CHECKOUT"
+git -C "$REPO_ROOT" ls-files -z --cached --others --exclude-standard \
+    | tar -C "$REPO_ROOT" --null --ignore-failed-read -T - -cf - | tar -C "$CHECKOUT" -xf -
+host_git() { git -C "$CHECKOUT" -c user.name=smoke -c user.email=smoke@example.com "$@"; }
+host_git init -q -b main
+host_git add -A
+host_git commit -q --no-verify -m "smoke: pushed"
+# .invalid never resolves, so fetches fail fast and offline; the remote-tracking
+# ref stands in for what GitHub has.
+host_git remote add origin https://github.invalid/octo/smoke.git
+host_git update-ref refs/remotes/origin/main HEAD
+host_git switch -q -c smoke-branch
+host_git commit -q --no-verify --allow-empty -m "smoke: unpushed on the host"
+host_git config user.name "Smoke Host"
+host_git config user.email host@example.com
+echo "not committed" > "$CHECKOUT/smoke-untracked.txt"
+host_head="$(git -C "$CHECKOUT" rev-parse HEAD)"
 
-echo "# privileged, with nested Docker"
-"${DOCKER[@]}" up --detach --build --quiet-pull
-timeout=90
-until "${DOCKER[@]}" exec -T app docker info >/dev/null 2>&1; do
-    timeout=$((timeout - 1))
-    [ "$timeout" -gt 0 ] || { "${DOCKER[@]}" logs --tail 40 app >&2; fail "dockerd did not start"; }
-    sleep 1
-done
+echo "# default mode, privileged, with nested Docker"
+"$START" --docker -- true </dev/null
+pass "start.sh --docker started the container"
+
+in_container 'docker info' >/dev/null || fail "dockerd is not running"
 pass "dockerd started"
-
-in_container '.devcontainer/postStartCommand.sh' >/dev/null
-pass "postStartCommand.sh ran"
 
 [ "$(in_container 'id -u')" = "$USER_UID" ] || fail "vscode UID does not match host UID $USER_UID"
 pass "vscode runs as host UID $USER_UID"
@@ -58,7 +93,8 @@ pass "git authenticates to GitHub with GH_TOKEN"
     || fail "bypassPermissions not set"
 pass "Claude defaults to bypassPermissions"
 
-[ "$(in_container 'readlink "$CLAUDE_CONFIG_DIR/skills"')" = /workspace/skills ] || fail "skills link missing"
+in_container '[ "$(readlink "$CLAUDE_CONFIG_DIR/skills")" = /workspace/skills ] && [ -d "$CLAUDE_CONFIG_DIR/skills/" ]' \
+    || fail "skills link missing or dangling"
 pass "skills live-linked"
 
 [ "$(in_container 'git -C /workspace config core.hooksPath')" = /usr/local/share/git-hooks ] \
@@ -75,42 +111,95 @@ pass "gitleaks hook blocks a token"
 in_container 'docker run --rm --quiet hello-world' | grep -q 'Hello from Docker!' || fail "nested docker run failed"
 pass "nested docker run works"
 
+echo "# default mode: the container's own clone"
+m="$(mounts)"
+if grep -q '^bind ' <<<"$m"; then fail "something from the host is bind-mounted: $m"; fi
+pass "nothing from the host is mounted"
+grep -q '^volume /workspace ' <<<"$m" || fail "/workspace is not a volume"
+[ "$(awk '$2 == "/home/vscode/.claude" { print $3 }' <<<"$m")" = "$SMOKE_CLAUDE_VOLUME" ] \
+    || fail "the Claude config is not the throwaway volume"
+pass "/workspace and the Claude config are volumes"
+
+[ "$(in_container 'git -C /workspace rev-parse HEAD')" = "$host_head" ] || fail "the clone's HEAD is not the checkout's"
+[ "$(in_container 'git -C /workspace symbolic-ref --short HEAD')" = smoke-branch ] || fail "the clone is not on the checkout's branch"
+[ "$(in_container 'git -C /workspace config --get remote.origin.url')" = https://github.invalid/octo/smoke.git ] \
+    || fail "the clone's origin is not the checkout's"
+in_container 'git -C /workspace rev-parse --verify --quiet refs/remotes/origin/main' >/dev/null \
+    || fail "the clone lacks the checkout's remote-tracking branches"
+in_container '[ -z "$(git -C /workspace status --porcelain)" ]' || fail "the seeded clone is not clean"
+pass "clone seeded from the checkout: branch, HEAD, origin, remote branches"
+in_container '[ ! -e /workspace/smoke-untracked.txt ]' || fail "an untracked host file reached the clone"
+pass "untracked host files stay out"
+
+in_container '
+    set -e; cd /workspace
+    git config --local user.name "Smoke Container"; git config --local user.email container@example.com
+    git commit -q --allow-empty -m "smoke: container work"' || fail "can't set git config or commit in the clone"
+[ "$(git -C "$CHECKOUT" config --local --get user.name)" = "Smoke Host" ] \
+    || fail "the clone's git config reached the host checkout"
+pass "git config and commits work in the clone, apart from the checkout"
+container_head="$(in_container 'git -C /workspace rev-parse HEAD')"
+
 echo "# back to unprivileged"
-"${BASE[@]}" up --detach
+"$START" -- true </dev/null
 [ "$(docker inspect "$("${BASE[@]}" ps -q app)" --format '{{.HostConfig.Privileged}}')" = false ] \
-    || fail "container still privileged without compose.docker.yml"
+    || fail "container still privileged without --docker"
 pass "container recreated unprivileged"
-"${BASE[@]}" exec -T --user vscode app bash -c '! docker info >/dev/null 2>&1' || fail "dockerd running while unprivileged"
+in_container '! docker info >/dev/null 2>&1' || fail "dockerd running while unprivileged"
 pass "no dockerd while unprivileged"
-
-echo "# read-only paths, unprivileged"
-in_unprivileged() { "${BASE[@]}" exec -T --user "$1" app bash -c "$2"; }
-in_unprivileged vscode '! command -v sudo' >/dev/null || fail "sudo is installed"
+in_container '! command -v sudo' >/dev/null || fail "sudo is installed"
 pass "no sudo"
-for path in .git/config .git/hooks/smoke-plant .devcontainer/smoke-plant; do
-    in_unprivileged vscode "! touch /workspace/$path 2>/dev/null" || fail "/workspace/$path is writable"
-done
-pass "host-executed paths are read-only"
-in_unprivileged vscode '! git -C /workspace config core.fsmonitor "touch /tmp/pwned" 2>/dev/null' \
-    || fail "git config could be changed"
-pass "git config can't be changed"
-in_unprivileged root 'command -v mount' >/dev/null || fail "no mount binary to test remounting with"
-for path in .git/hooks .git/config .devcontainer; do
-    in_unprivileged root "! mount -o remount,rw,bind /workspace/$path 2>/dev/null" \
-        || fail "root could remount /workspace/$path read-write"
-done
-pass "even root can't remount them read-write"
+[ "$(in_container 'git -C /workspace rev-parse HEAD')" = "$container_head" ] || fail "the clone was seeded again"
+pass "the clone survives the recreate and isn't seeded again"
 
-echo "# --maintain"
-MAINTAIN=("${BASE[@]}" -f "$SCRIPT_DIR/compose.maintain.yml")
-"${MAINTAIN[@]}" up --detach
-"${MAINTAIN[@]}" exec -T --user vscode app bash -c \
-    'touch /workspace/.devcontainer/smoke-plant && rm /workspace/.devcontainer/smoke-plant' \
-    || fail ".devcontainer/ is not writable with compose.maintain.yml"
-pass ".devcontainer/ writable with --maintain"
-"${BASE[@]}" up --detach
-in_unprivileged vscode '! touch /workspace/.devcontainer/smoke-plant 2>/dev/null' \
-    || fail ".devcontainer/ still writable after leaving --maintain"
-pass "read-only again without --maintain"
+echo "# --reset"
+if "$START" --reset -- true </dev/null >"$WORK/reset.log" 2>&1; then
+    cat "$WORK/reset.log" >&2; fail "--reset went ahead without a terminal"
+fi
+grep -q 'smoke: container work' "$WORK/reset.log" || { cat "$WORK/reset.log" >&2; fail "--reset did not list the unpushed commit"; }
+[ "$(in_container 'git -C /workspace rev-parse HEAD')" = "$container_head" ] || fail "--reset changed the clone without asking"
+pass "--reset lists unpushed work and stops without a terminal"
+
+# util-linux script(1) gives start.sh a terminal to prompt on; skip where it's
+# a different script(1).
+if script -qec true /dev/null >/dev/null 2>&1; then
+    printf -v reset_cmd '%q --reset -- true' "$START"
+    if printf 'n\n' | script -qec "$reset_cmd" /dev/null >"$WORK/reset.log" 2>&1; then
+        cat "$WORK/reset.log" >&2; fail "--reset went ahead on n"
+    fi
+    [ "$(in_container 'git -C /workspace rev-parse HEAD')" = "$container_head" ] || fail "--reset changed the clone on n"
+    pass "--reset stops on n"
+
+    in_container 'touch /workspace/.git/smoke-junk'
+    # y to the reset, then the defaults for user.name and user.email.
+    printf 'y\n\n\n' | script -qec "$reset_cmd" /dev/null >"$WORK/reset.log" 2>&1 \
+        || { cat "$WORK/reset.log" >&2; fail "--reset failed on y"; }
+    [ "$(in_container 'git -C /workspace rev-parse HEAD')" = "$host_head" ] || fail "--reset did not seed the clone again"
+    in_container '[ ! -e /workspace/.git/smoke-junk ]' || fail "--reset left the old clone's files"
+    [ "$(in_container 'git -C /workspace config --local --get user.name')" = "Smoke Host" ] \
+        || fail "start.sh did not set the clone's git identity from the checkout's"
+    pass "--reset re-seeds on y, and start.sh asks for the clone's git identity"
+else
+    echo "skip - --reset with a terminal (needs util-linux script)"
+fi
+
+echo "# --mount-workspace"
+if "$START" --mount-workspace --reset -- true </dev/null >/dev/null 2>&1; then
+    fail "--reset was accepted with --mount-workspace"
+fi
+pass "--reset refused with --mount-workspace"
+"$START" --mount-workspace -- true </dev/null
+m="$(mounts)"
+[ "$(grep -c ' /workspace' <<<"$m")" = 1 ] && grep -q '^bind /workspace ' <<<"$m" \
+    || fail "/workspace is not one plain bind mount: $m"
+in_container '[ -e /workspace/smoke-untracked.txt ]' || fail "/workspace is not the checkout"
+pass "the checkout is mounted, with nothing on top"
+if grep -q ' /home/vscode/.claude ' <<<"$m"; then fail "a Claude config volume is mounted"; fi
+pass "no Claude config volume"
+in_container 'git -C /workspace config --local smoke.mounted yes' || fail "can't write .git/config"
+[ "$(git -C "$CHECKOUT" config --local --get smoke.mounted)" = yes ] || fail ".git/config written inside didn't reach the checkout"
+pass ".git/config is writable, and shared with the host"
+[ "$(in_container 'readlink "$CLAUDE_CONFIG_DIR/skills"')" = /workspace/skills ] || fail "skills link missing"
+pass "skills live-linked"
 
 echo "all smoke tests passed"

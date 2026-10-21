@@ -1,6 +1,6 @@
 {
   "name": "grantspeelman-skills",
-  "dockerComposeFile": "docker-compose.yml",
+  "dockerComposeFile": ["docker-compose.yml", "compose.mount.yml"],
   "service": "app",
   "workspaceFolder": "/workspace",
   "remoteUser": "vscode",

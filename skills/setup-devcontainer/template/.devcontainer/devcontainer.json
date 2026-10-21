@@ -1,6 +1,6 @@
 {
   "name": "__PROJECT__",
-  "dockerComposeFile": "docker-compose.yml",
+  "dockerComposeFile": ["docker-compose.yml", "compose.mount.yml"],
   "service": "app",
   "workspaceFolder": "/workspace",
   "remoteUser": "vscode",

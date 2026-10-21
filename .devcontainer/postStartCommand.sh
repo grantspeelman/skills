@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Runs as vscode on every container start, from both VS Code and start.sh.
-# Everything here is idempotent: the Claude config dir is a volume that
-# outlives containers, so this script meets its own earlier output.
+# Everything here is idempotent: it runs on every start, and in start.sh's
+# default mode the Claude config dir is a volume that outlives containers, so
+# this script meets its own earlier output.
 set -euo pipefail
 
 config_dir="${CLAUDE_CONFIG_DIR:?CLAUDE_CONFIG_DIR is set in the Dockerfile}"
@@ -15,7 +16,8 @@ jq '.permissions.defaultMode = "bypassPermissions"' "${settings}" > "${settings}
 mv "${settings}.tmp" "${settings}"
 
 # Live-load this repo's skills: edits under /workspace/skills are what Claude
-# sees next session. Each container links to its own checkout's /workspace.
+# sees next session. Each container links to its own /workspace: its clone, or
+# the mounted checkout.
 skills_link="${config_dir}/skills"
 if [ -e "${skills_link}" ] && [ ! -L "${skills_link}" ]; then
   echo "WARNING: ${skills_link} is a real directory, not a link; leaving it alone, so /workspace/skills is not loaded." >&2
@@ -29,5 +31,9 @@ if [ -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
 fi
 
 if [ ! -s "${config_dir}/.credentials.json" ]; then
-  echo "Claude is not logged in yet: run 'claude' and log in once; the login persists across rebuilds."
+  if mountpoint -q "${config_dir}"; then
+    echo "Claude is not logged in yet: run 'claude' and log in once; the login persists across rebuilds."
+  else
+    echo "Claude is not logged in yet: run 'claude' and log in. Without the shared config volume (--mount-workspace, VS Code), the login lasts until the container is recreated."
+  fi
 fi

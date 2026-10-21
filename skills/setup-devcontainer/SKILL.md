@@ -28,19 +28,20 @@ security posture as it is and add what this repo needs.
 - `.github/workflows/devcontainer-ci.yml`, which builds the image, runs the
   structure test and smoke test, and scans the full history for secrets.
 
-Leave these properties alone unless the user asks you to change them: only the
-checkout is mounted, no host `~/.ssh` or `~/.claude`; `.git/hooks`,
-`.git/config` and `.devcontainer/` are mounted read-only, so nothing in the
-container can plant code that host git or `start.sh` later runs
-(`start.sh --maintain` makes `.devcontainer/` writable when the user wants it
-maintained); there's no `sudo`, so those
-mounts hold even against root; git hooks come from the image via
-`core.hooksPath`; no ssh-agent is forwarded, and git reaches GitHub over HTTPS
+Leave these properties alone unless the user asks you to change them: by
+default `start.sh` mounts nothing from the host and gives the container its own
+clone in a volume, seeded once from a git bundle of the checkout, so nothing in
+the container can write a file that host git or `start.sh` later runs; only
+`start.sh --mount-workspace` and VS Code mount the checkout, read-write, with
+the risks the README lists; no host `~/.ssh` or `~/.claude` in any mode; the
+shared Claude config volume is external, so `down -v` can't delete the login,
+and only the default mode uses it; there's no `sudo`; git hooks come from the
+image via `core.hooksPath`; no ssh-agent is forwarded, and git reaches GitHub over HTTPS
 with the repo-scoped `GH_TOKEN` (gh as credential helper, SSH remotes rewritten
 in `/etc/gitconfig`); GitHub host keys are pinned for VS Code's own agent
 forwarding; downloaded binaries are pinned and SHA-256 checked; nested Docker
-stays opt-in and privileged only with `--docker`; the Claude config is a named
-volume.
+stays opt-in and privileged only with `--docker`; `start.sh --reset` lists
+unpushed work and asks before it discards the clone.
 
 ## Steps
 
@@ -50,7 +51,7 @@ volume.
 - The project slug is `$ARGUMENTS` if given (in Codex, a slug the user typed
   after the skill name). Otherwise derive it from the repo
   name: lowercase, with anything other than `a-z0-9_-` replaced by `-`. It names
-  the image, the Claude config volume, the compose project and the agent socket.
+  the image, the Claude config volume and the compose project.
 - If `.devcontainer/`, `lefthook.yml` or `.github/workflows/devcontainer-ci.yml`
   already exist, stop and show the user what's there. Ask whether to replace,
   merge into, or leave each one. Don't overwrite on your own.
@@ -149,9 +150,10 @@ lockfile-respecting command (`npm ci`, `pnpm install --frozen-lockfile`,
 `vscode` with no `sudo`, so anything that needs root (system packages, global
 installs) belongs in the `Dockerfile`, not here. It runs on every
 start, so make it cheap when nothing changed: skip it when a hash of the
-lockfile matches one stored from the last run. If the dependency directory is
-large and inside the checkout (e.g. `node_modules`), consider a named volume
-for it in `docker-compose.yml` and say so in the README.
+lockfile matches one stored from the last run. Files git doesn't track (a
+`.env`, local config) never reach the default mode's clone, so if the repo
+needs one to build or test, create it here from a tracked example, with
+obviously-local values, or say in the README how to create it inside.
 
 **Structure test.** Add a `commandTests` entry for every tool you added: exact
 version for pinned binaries, series (`^v20\.`) for archive packages, following
@@ -175,9 +177,10 @@ The image's hook (`.devcontainer/git-hooks/pre-commit`) runs only lefthook's
 `pre-commit`. If the repo's lefthook config uses other hooks, link those names
 to the same script in the `Dockerfile`. Another hook manager either needs its
 own entry point there or sets a local `core.hooksPath`. Warn the user when the
-hooks live in the tracked tree (`.husky/`, `.githooks/`): the container can
-write them, and host git runs them, which undoes the read-only `.git/hooks`.
-Either mount that directory read-only too or say why not.
+hooks live in the tracked tree (`.husky/`, `.githooks/`): host git runs them,
+and changes to them reach the host through a pull, or straight away with
+`--mount-workspace` and VS Code. Add that directory to the README's list of
+paths the host runs.
 
 ### 5. Pin the git host's SSH keys
 
@@ -230,10 +233,14 @@ be the first real build. Don't claim it works when it hasn't been built.
 
 Summarise for the user: what was added for this repo, any choices you made for
 them, what you verified and what you couldn't, and the first-run steps
-(`.devcontainer/start.sh`, which asks for a git `user.name` and `user.email`
-if the repo's `.git/config` lacks them, then `claude` and log in once). Mention
-that `start.sh -- <command>` runs a command instead of a shell, e.g.
-`start.sh -- claude --resume`. Tell them the container pushes only with the
+(`.devcontainer/start.sh`, which seeds the container's clone from the
+checkout and asks for a git `user.name` and `user.email` for it, then `claude`
+and log in once). Mention that `start.sh -- <command>` runs a command instead
+of a shell, e.g. `start.sh -- claude --resume`; that the container works in its
+own clone, so its work reaches the checkout through GitHub and untracked files
+don't reach it; that `--mount-workspace` (and VS Code) mount the checkout
+instead, with the risks in the README; and that `docker compose ... down -v`
+deletes the clone along with anything not pushed. Tell them the container pushes only with the
 token in `~/.config/<owner>/<name>/gh.env`, and point them at the README's
 GitHub access section for its permissions (no Administration) and the `main`
 ruleset with no bypass. Don't commit unless they ask.

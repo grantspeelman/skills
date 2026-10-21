@@ -7,14 +7,16 @@
 #   • Base ubuntu:26.04. Node 22, Python 3, gosu and Docker come from the Ubuntu
 #     archive, so their tests below pin the series, not the patch release;
 #     gh and gitleaks are checksummed release binaries and pinned exactly.
-#   • Remote user `vscode`, UID/GID matched to the host at build time, so the
-#     bind-mounted checkout lines up.
+#   • Remote user `vscode`, UID/GID matched to the host at build time, so a
+#     mounted checkout (--mount-workspace, VS Code) lines up.
 #   • ENTRYPOINT /entrypoint.sh starts as root, starts dockerd only when
 #     ENABLE_DOCKER=1 (compose.docker.yml, privileged), then gosu-drops to vscode.
-#   • CLAUDE_CONFIG_DIR is a named volume, so the Claude login survives rebuilds.
-#   • No sudo, so the read-only mounts in docker-compose.yml hold against Claude.
-#   • Git hooks are baked in and enabled by core.hooksPath, since the checkout's
-#     .git/hooks is mounted read-only.
+#   • In start.sh's default mode, /workspace (the container's own clone) and
+#     CLAUDE_CONFIG_DIR are named volumes; both dirs are vscode-owned in the
+#     image so fresh volumes take that ownership.
+#   • No sudo, so Claude can't change the image's git setup from inside.
+#   • Git hooks are baked in and enabled by core.hooksPath, so every mode runs
+#     them and none are installed into the repo's .git/hooks.
 #   • git reaches GitHub over HTTPS with GH_TOKEN (gh as credential helper), and
 #     SSH remotes are rewritten to it, since no ssh-agent is forwarded.
 
@@ -32,7 +34,7 @@ metadataTest:
       value: "1"
 
 fileExistenceTests:
-  - name: workspace mount point exists
+  - name: workspace dir exists and is vscode-owned (seeds the clone volume's ownership)
     path: /workspace
     shouldExist: true
     uid: 1000
@@ -42,7 +44,7 @@ fileExistenceTests:
     shouldExist: true
     uid: 1000
 
-  - name: no sudo binary (root would let Claude undo the read-only mounts)
+  - name: no sudo binary (root would let Claude change the image's git setup)
     path: /usr/bin/sudo
     shouldExist: false
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Runs as vscode on every container start, from both VS Code and start.sh.
-# Everything here is idempotent: the Claude config dir is a volume that
-# outlives containers, so this script meets its own earlier output.
+# Everything here is idempotent: it runs on every start, and in start.sh's
+# default mode the Claude config dir is a volume that outlives containers, so
+# this script meets its own earlier output.
 set -euo pipefail
 
 config_dir="${CLAUDE_CONFIG_DIR:?CLAUDE_CONFIG_DIR is set in the Dockerfile}"
@@ -22,5 +23,9 @@ if [ -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
 fi
 
 if [ ! -s "${config_dir}/.credentials.json" ]; then
-  echo "Claude is not logged in yet: run 'claude' and log in once; the login persists across rebuilds."
+  if mountpoint -q "${config_dir}"; then
+    echo "Claude is not logged in yet: run 'claude' and log in once; the login persists across rebuilds."
+  else
+    echo "Claude is not logged in yet: run 'claude' and log in. Without the shared config volume (--mount-workspace, VS Code), the login lasts until the container is recreated."
+  fi
 fi
