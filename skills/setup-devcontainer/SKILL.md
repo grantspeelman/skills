@@ -43,7 +43,11 @@ forwarding; downloaded binaries are pinned and SHA-256 checked; nested Docker
 stays opt-in and privileged only with `--docker`; `start.sh --reset` lists
 unpushed work and asks before it discards the clone; every `start.sh` run
 compares `.devcontainer/` with the default branch and asks before running
-anything different; the post-start setup runs from the image, so the clone
+anything different (it can't catch a pushed branch that changes `start.sh`
+itself, since that copy runs the check, so the README tells the user to review
+`git diff origin/HEAD <branch> -- .devcontainer` before checking out a branch
+the container pushed; `--rebuild` checks from the copy before the pull, so it
+has no such gap); the post-start setup runs from the image, so the clone
 can't change or break it (edits to `postStartCommand.sh` take a rebuild).
 
 ## Steps
@@ -243,7 +247,11 @@ of a shell, e.g. `start.sh -- claude --resume`; that the container works in its
 own clone, so its work reaches the checkout through GitHub and untracked files
 don't reach it; that `--mount-workspace` (and VS Code) mount the checkout
 instead, with the risks in the README; and that `docker compose ... down -v`
-deletes the clone along with anything not pushed. Tell them the container pushes only with the
+deletes the clone along with anything not pushed. Warn them that until the
+new `.devcontainer/` is on the default branch (a freshly set-up repo, or any
+branch where `.devcontainer/` differs from the default branch), `start.sh`
+shows the diff and asks before it runs, and that `start.sh -- <command>` with
+no terminal to ask on stops there. Tell them the container pushes only with the
 token in `~/.config/<owner>/<name>/gh.env`, and point them at the README's
 GitHub access section for its permissions (no Administration) and the `main`
 ruleset with no bypass. Don't commit unless they ask.

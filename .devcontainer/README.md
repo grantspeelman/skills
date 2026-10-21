@@ -75,13 +75,25 @@ That happens once. Later runs leave the clone alone, and the container fetches
 from GitHub itself. Its work leaves the same way: pushed to a branch and merged
 through a PR. To see it on the host, `git fetch` or `git pull` here.
 
-**Before you run `start.sh` on a branch the container pushed, review
+**Before you check out or pull a branch the container pushed, review its
 `.devcontainer/` and the other files this host runs** (see the table under
 [--mount-workspace and VS Code](#--mount-workspace-and-vs-code)). A pushed
-branch can change any of them. `start.sh` checks `.devcontainer/` on every
-start: if it differs from the remote's default branch as this checkout last
-fetched it (`refs/remotes/origin/HEAD`, no network), it shows the diff and
-asks, and with no terminal to ask on it stops. It doesn't check the rest, and
+branch can change any of them. For `.devcontainer/`, from the host:
+
+```
+git fetch origin
+git diff origin/HEAD origin/<branch> -- .devcontainer
+```
+
+`start.sh` also checks `.devcontainer/` on every start: if it differs from the
+remote's default branch as this checkout last fetched it
+(`refs/remotes/origin/HEAD`, no network), it shows the diff and asks, and with
+no terminal to ask on it stops. That catches changes to the compose files, the
+`Dockerfile` and the rest of what `start.sh` runs, but not a changed `start.sh`
+itself: the check runs inside the checked-out copy, which a pushed branch can
+change to leave the check out. Hence the review before you check the branch
+out. `--rebuild` doesn't have this gap, because the copy from before the pull
+does its checking. The check doesn't cover files outside `.devcontainer/`, and
 it also asks while you have your own uncommitted changes there.
 
 What this costs:

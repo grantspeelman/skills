@@ -165,21 +165,39 @@ fi
 # ── Every start: .devcontainer/ as the default branch has it ────────────────
 # A branch the container pushed can change .devcontainer/, and checking it out
 # here puts that on disk. This compares it with the default branch as this
-# checkout last fetched it (no network). With --mount-workspace the container
-# can write this checkout's .git too, so there's nothing trustworthy to compare
-# with, and the check is skipped; see the warning below.
-if [ "$mount_mode" = false ] && [ "${START_SH_VETTED:-}" != true ] \
-    && [ "$remote" != . ] && [ -n "$(git -C "$PROJECT_ROOT" config --get "remote.$remote.url" || true)" ]; then
-    on_disk="$(devcontainer_tree)"
-    default_ref="$(git -C "$PROJECT_ROOT" symbolic-ref --quiet "refs/remotes/$remote/HEAD" || true)"
-    if [ -z "$default_ref" ]; then
-        echo -e "${YELLOW}No refs/remotes/$remote/HEAD to check .devcontainer/ against; git remote set-head $remote --auto sets it.${NC}"
-        confirm_devcontainer "" "$on_disk" "That's all of .devcontainer/ (above), unchecked." \
-            || { echo -e "${RED}Stopped without running .devcontainer/.${NC}" >&2; exit 1; }
-    elif [ "$(devcontainer_tree_at "$default_ref")" != "$on_disk" ]; then
-        confirm_devcontainer "$(devcontainer_tree_at "$default_ref")" "$on_disk" \
-            "The .devcontainer/ on disk differs from ${default_ref#refs/remotes/} (above), as this checkout last fetched it." \
-            || { echo -e "${RED}Stopped without running this .devcontainer/. Review it, or switch to the default branch.${NC}" >&2; exit 1; }
+# checkout last fetched it (no network). It catches changes to the compose
+# files, the Dockerfile and the rest of what start.sh runs, but not a changed
+# start.sh itself: this check runs inside that copy, which can simply leave it
+# out. So review a pushed branch's .devcontainer/ before you check it out or
+# pull it (git diff origin/HEAD <branch> -- .devcontainer). --rebuild doesn't
+# have the gap: the copy from before the pull does its checking.
+# With --mount-workspace the container can write this checkout's .git too, so
+# there's nothing trustworthy to compare with, and the check is skipped; see
+# the warning below.
+# A --rebuild that just vetted .devcontainer/ says so; only the copy it runs
+# after the pull takes its word.
+if [ "${START_SH_PULLED:-}" = 1 ] && [ "${START_SH_VETTED:-}" = true ]; then
+    :
+elif [ "$mount_mode" = false ]; then
+    # The branch's own remote, unless it's this repo (.) or has no URL.
+    check_remote="$remote"
+    if [ "$check_remote" = . ] || [ -z "$(git -C "$PROJECT_ROOT" config --get "remote.$check_remote.url" || true)" ]; then
+        check_remote=origin
+    fi
+    if [ -z "$(git -C "$PROJECT_ROOT" config --get "remote.$check_remote.url" || true)" ]; then
+        echo -e "${YELLOW}No remote to check .devcontainer/ against, so it wasn't checked.${NC}"
+    else
+        on_disk="$(devcontainer_tree)"
+        default_ref="$(git -C "$PROJECT_ROOT" symbolic-ref --quiet "refs/remotes/$check_remote/HEAD" || true)"
+        if [ -z "$default_ref" ]; then
+            echo -e "${YELLOW}No refs/remotes/$check_remote/HEAD to check .devcontainer/ against; git remote set-head $check_remote --auto sets it.${NC}"
+            confirm_devcontainer "" "$on_disk" "That's all of .devcontainer/ (above), unchecked." \
+                || { echo -e "${RED}Stopped without running .devcontainer/.${NC}" >&2; exit 1; }
+        elif [ "$(devcontainer_tree_at "$default_ref")" != "$on_disk" ]; then
+            confirm_devcontainer "$(devcontainer_tree_at "$default_ref")" "$on_disk" \
+                "The .devcontainer/ on disk differs from ${default_ref#refs/remotes/} (above), as this checkout last fetched it." \
+                || { echo -e "${RED}Stopped without running this .devcontainer/. Review it, or switch to the default branch.${NC}" >&2; exit 1; }
+        fi
     fi
 fi
 
@@ -270,6 +288,24 @@ if [ "$mount_mode" = false ]; then
         elif [ -z "$(ls -A /workspace)" ]; then echo empty
         else echo other; fi' </dev/null)"
 
+    # Before --reset deletes anything: a checkout that can't seed would leave
+    # the clone empty.
+    if [ "$state" = empty ] || [ "$reset" = true ]; then
+        if ! git -C "$PROJECT_ROOT" rev-parse --verify --quiet HEAD >/dev/null; then
+            echo -e "${RED}This checkout has no commits to seed the container's clone from.${NC}" >&2
+            exit 1
+        fi
+        # Either would leave the clone missing history it needs.
+        if [ "$(git -C "$PROJECT_ROOT" rev-parse --is-shallow-repository)" = true ]; then
+            echo -e "${RED}This checkout is shallow, so it can't seed a full clone. Run git fetch --unshallow here, then start.sh again.${NC}" >&2
+            exit 1
+        fi
+        if [ -n "$(git -C "$PROJECT_ROOT" config --get extensions.partialClone || true)" ]; then
+            echo -e "${RED}This checkout is a partial clone (--filter), so it lacks objects the seed needs. Run start.sh from a full clone of the repo.${NC}" >&2
+            exit 1
+        fi
+    fi
+
     if [ "$reset" = true ] && [ "$state" != empty ]; then
         # Everything --reset would destroy that GitHub doesn't have. It runs in
         # the container, so it fetches with the container's token and never
@@ -309,14 +345,18 @@ if [ "$mount_mode" = false ]; then
             # HEAD only when it names a commit: an unborn one fails the lot.
             tips=(--branches --tags)
             if git rev-parse --verify --quiet HEAD >/dev/null; then tips=(HEAD "${tips[@]}"); fi
-            if count="$(git rev-list --count "${tips[@]}" --not --remotes=origin 2>&1)"; then
+            # stderr kept apart, so a warning is never taken for the count.
+            errors="$(mktemp)"
+            if count="$(git rev-list --count "${tips[@]}" --not --remotes=origin 2>"$errors")" \
+                && [[ "$count" =~ ^[0-9]+$ ]]; then
                 if [ "$count" -gt 0 ]; then
                     check "$count commit(s) not on origin (newest 20):" \
                         git log --oneline --decorate -n 20 "${tips[@]}" --not --remotes=origin
                 fi
             else
-                problem "Could not check for commits that are not on origin: $count"
+                problem "Could not check for commits that are not on origin: $count $(cat "$errors")"
             fi
+            rm -f "$errors"
             # A tag counts as pushed only when origin has the same name at the same object.
             if [ -n "$(git for-each-ref refs/tags)" ]; then
                 if [ "$fetched" = true ] && remote_tags="$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags origin)"; then
@@ -364,19 +404,6 @@ if [ "$mount_mode" = false ]; then
             # nothing in the container can write back here. After this the clone
             # fetches from GitHub itself.
             echo -e "${GREEN}Seeding the container's clone from this checkout...${NC}"
-            if ! git -C "$PROJECT_ROOT" rev-parse --verify --quiet HEAD >/dev/null; then
-                echo -e "${RED}This checkout has no commits to seed the container's clone from.${NC}" >&2
-                exit 1
-            fi
-            # Either would leave the clone missing history it needs.
-            if [ "$(git -C "$PROJECT_ROOT" rev-parse --is-shallow-repository)" = true ]; then
-                echo -e "${RED}This checkout is shallow, so it can't seed a full clone. Run git fetch --unshallow here, then start.sh again.${NC}" >&2
-                exit 1
-            fi
-            if [ -n "$(git -C "$PROJECT_ROOT" config --get extensions.partialClone || true)" ]; then
-                echo -e "${RED}This checkout is a partial clone (--filter), so it lacks objects the seed needs. Run start.sh from a full clone of the repo.${NC}" >&2
-                exit 1
-            fi
             seed_branch="$(git -C "$PROJECT_ROOT" symbolic-ref --quiet --short HEAD || true)"
             # The URL as written, not as this host's insteadOf rules rewrite it;
             # the image has its own rules for GitHub.

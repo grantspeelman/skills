@@ -251,7 +251,7 @@ git clone -q --depth 1 "file://$CHECKOUT" "$WORK/shallow"
 if other "$WORK/shallow" "${OTHER_PROJECTS[1]}" >"$WORK/shallow.log" 2>&1; then
     cat "$WORK/shallow.log" >&2; fail "start.sh seeded from a shallow checkout"
 fi
-grep -q 'shallow' "$WORK/shallow.log" || { cat "$WORK/shallow.log" >&2; fail "start.sh did not say the checkout is shallow"; }
+grep -q 'checkout is shallow' "$WORK/shallow.log" || { cat "$WORK/shallow.log" >&2; fail "start.sh did not say the checkout is shallow"; }
 pass "stops on a shallow checkout"
 
 echo "all smoke tests passed"
