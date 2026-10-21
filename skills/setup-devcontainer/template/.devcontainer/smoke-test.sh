@@ -13,7 +13,9 @@
 #     remote; with a terminal (through `script`), stops on "n" and re-seeds on "y"
 #   • --mount-workspace: a plain mount with nothing on top, writable .git/config,
 #     no Claude config volume
-#   • seeding from a detached HEAD, and stopping on a shallow checkout
+#   • a clone whose git config can't be read: stops, and says so
+#   • seeding from a detached HEAD, and stopping on a shallow checkout or one
+#     that can't be bundled
 #   • the .devcontainer/ check every start runs
 # Runs in CI (.github/workflows/devcontainer-ci.yml) and locally alike. It uses
 # its own compose project and a throwaway Claude config volume (never your real
@@ -45,7 +47,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "ok - $*"; }
 
 # Separate projects for the detached and shallow checkouts below.
-OTHER_PROJECTS=("$SMOKE_COMPOSE_PROJECT-detached" "$SMOKE_COMPOSE_PROJECT-shallow")
+OTHER_PROJECTS=("$SMOKE_COMPOSE_PROJECT-detached" "$SMOKE_COMPOSE_PROJECT-shallow" "$SMOKE_COMPOSE_PROJECT-broken")
 
 cleanup() {
     "${DOCKER[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
@@ -182,6 +184,17 @@ pass "the clone survives the recreate and isn't seeded again"
 pass "start.sh runs the image's post-start setup, not the clone's"
 in_container 'git -C /workspace checkout -q -- .devcontainer/postStartCommand.sh'
 
+echo "# a clone git can't read"
+in_container 'echo "[broken" >> /workspace/.git/config'
+if "$START" -- true </dev/null >"$WORK/unreadable.log" 2>&1; then
+    cat "$WORK/unreadable.log" >&2; fail "start.sh went ahead with a clone whose config git can't read"
+fi
+in_container 'sed -i "\$d" /workspace/.git/config'
+grep -q "git couldn't read its config" "$WORK/unreadable.log" \
+    || { cat "$WORK/unreadable.log" >&2; fail "start.sh did not say the clone's config can't be read"; }
+[ "$(in_container 'git -C /workspace rev-parse HEAD')" = "$container_head" ] || fail "an unreadable clone was changed"
+pass "stops on a clone whose config git can't read"
+
 echo "# --reset"
 # Work a reset dropped is only in the reflogs, and must still be listed.
 in_container '
@@ -271,5 +284,20 @@ if other "$WORK/shallow" "${OTHER_PROJECTS[1]}" >"$WORK/shallow.log" 2>&1; then
 fi
 grep -q 'checkout is shallow' "$WORK/shallow.log" || { cat "$WORK/shallow.log" >&2; fail "start.sh did not say the checkout is shallow"; }
 pass "stops on a shallow checkout"
+
+# A checkout missing an object it needs: the bundle fails before anything else.
+git clone -q "$CHECKOUT" "$WORK/broken"
+echo "smoke broken $$" > "$WORK/broken/smoke-broken.txt"
+git -C "$WORK/broken" add smoke-broken.txt
+git -C "$WORK/broken" -c user.name=smoke -c user.email=smoke@example.com \
+    commit -q --no-verify -m "smoke: broken"
+broken_blob="$(git -C "$WORK/broken" rev-parse HEAD:smoke-broken.txt)"
+rm "$WORK/broken/.git/objects/${broken_blob:0:2}/${broken_blob:2}"
+if other "$WORK/broken" "${OTHER_PROJECTS[2]}" >"$WORK/broken.log" 2>&1; then
+    cat "$WORK/broken.log" >&2; fail "start.sh seeded from a checkout missing an object"
+fi
+grep -q "Couldn't bundle this checkout" "$WORK/broken.log" || { cat "$WORK/broken.log" >&2; fail "start.sh did not say the bundle failed"; }
+if compgen -G "$WORK/broken/.git/devcontainer-seed.*" >/dev/null; then fail "start.sh left its bundle directory behind"; fi
+pass "stops on a checkout that can't be bundled, and cleans up"
 
 echo "all smoke tests passed"

@@ -217,14 +217,15 @@ SHA-256), update its test in the same commit.
 
 `smoke-test.sh` runs `start.sh` from a throwaway copy of the checkout and checks
 it end to end: the seeded clone with nothing from the host mounted, seeding only
-once, seeding from a detached `HEAD`, leaving stashes out, stopping on a
-shallow checkout, the `.devcontainer/` check, `--reset` (listing work kept
-only in a reflog, stopping without a terminal, refusing a partial clone), `--mount-workspace` as a plain
+once, seeding from a detached `HEAD`, leaving stashes out, stopping on a shallow
+checkout, a checkout it can't bundle or a clone whose config git can't read, the
+`.devcontainer/` check, `--reset` (listing work kept only in a reflog, stopping
+without a terminal, refusing a partial clone), `--mount-workspace` as a plain
 mount with no Claude config volume, no SSH agent and git over HTTPS with the
-token, no `sudo`, Claude settings, the project toolchain, the commit hook, nested
-Docker, and switching back to unprivileged. It cleans up after itself, using
-its own compose project and a throwaway Claude config volume so your login and
-clone are never touched.
+token, no `sudo`, Claude settings, the project toolchain, the commit hook,
+nested Docker, and switching back to unprivileged. It cleans up after itself,
+using its own compose project and a throwaway Claude config volume so your login
+and clone are never touched.
 
 CI (`.github/workflows/devcontainer-ci.yml`) runs both, plus a full-history
 secret scan, on every push to `main` and every PR.

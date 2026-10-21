@@ -325,11 +325,21 @@ if [ "$mount_mode" = false ]; then
         # notes, other remotes) reaches the container, not even as loose
         # objects. No lazy fetch, so a missing object fails instead of being
         # fetched from a promisor remote.
-        bundle="$(mktemp)"
-        trap 'rm -f "$bundle"' EXIT
-        if ! GIT_NO_LAZY_FETCH=1 git -C "$PROJECT_ROOT" bundle create -q "$bundle" \
-                --branches --tags --remotes=origin HEAD \
-            || ! git -C "$PROJECT_ROOT" bundle verify -q "$bundle" >/dev/null; then
+        # It holds every branch, so it goes in a private directory (git writes
+        # it through a .lock it renames, so the umask is what keeps the file
+        # private), inside this checkout's git dir: the repo's own filesystem,
+        # where /tmp is often a small tmpfs, and out of the container's sight.
+        # git ignores what it doesn't know there, so a leftover from a crash
+        # only takes up space.
+        bundle_dir="$(umask 077 && mktemp -d "$(git -C "$PROJECT_ROOT" rev-parse --absolute-git-dir)/devcontainer-seed.XXXXXX")"
+        trap 'rm -rf "$bundle_dir"' EXIT
+        bundle="$bundle_dir/seed.bundle"
+        # verify says "is okay" on success; only its complaints are shown.
+        verify_out=""
+        if ! (umask 077 && GIT_NO_LAZY_FETCH=1 git -C "$PROJECT_ROOT" bundle create -q "$bundle" \
+                --branches --tags --remotes=origin HEAD) \
+            || ! verify_out="$(git -C "$PROJECT_ROOT" bundle verify -q "$bundle" 2>&1)"; then
+            if [ -n "$verify_out" ]; then echo "$verify_out" >&2; fi
             echo -e "${RED}Couldn't bundle this checkout to seed the container's clone from (above). The clone is unchanged.${NC}" >&2
             exit 1
         fi
@@ -500,13 +510,13 @@ if [ "$mount_mode" = false ]; then
                 exit 1
             fi
             # Now: the exec at the end replaces this shell, so the trap never runs.
-            rm -f "$bundle"
+            rm -rf "$bundle_dir"
             if [ -z "$origin_url" ]; then
                 echo -e "${YELLOW}This checkout has no origin remote, so neither does the clone: work in it can't be pushed.${NC}"
             fi
             ;;
         unreadable)
-            echo -e "${RED}The container's clone exists, but git couldn't read its config (error above). Fix that inside the container if you can; as a last resort, rerun with --reset, which deletes the clone and seeds it again.${NC}" >&2
+            echo -e "${RED}The container's clone exists, but git couldn't read its config (error above), e.g. dubious ownership after a UID change: check the files' owner or git's safe.directory. Fix that inside the container if you can; as a last resort, rerun with --reset, which deletes the clone and seeds it again.${NC}" >&2
             exit 1
             ;;
         *)
