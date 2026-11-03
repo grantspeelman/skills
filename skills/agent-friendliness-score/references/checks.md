@@ -55,7 +55,7 @@ Don't open these test paths, and don't use git history to see them: <test paths>
 Inline tests count as tests. In Rust, stop reading a file at #[cfg(test)], for
 example with awk '/#\[cfg\(test\)\]/{exit}1' <file>. Ignore doctests, Python >>>
 examples and in-source test blocks. Don't open files named
-agent-friendliness-report-*, or see them through git history, because they are
+like agent-friendliness-report-20261103T155624Z.md, or see them through git history, because they are
 earlier results of this test. If you read any of these anyway, say which file.
 
 Choose sites from these often-changed files first: <hotspots>
@@ -116,6 +116,9 @@ Fewer than 5 valid bugs that ran means seeded bugs are "not measured".
 
 ### When the baseline fails
 
+- **`sandbox settle` printed `earlier_reports_removed_from_clone`, and only a link
+  checker or similar fails on those files:** that comes from this run removing them, so it
+  isn't the repo's failure. Leave that failure out of the score.
 - **Tests fail after following the repo's documented setup:** score it. Compare
   seeded runs against the baseline's failures. A suite where nothing passes catches
   nothing, so Verification is 0.
@@ -176,7 +179,8 @@ to run it in a new session and paste the answer back. If they would rather not,
 mark the check "not measured". Never answer these prompts yourself, because you've
 already read the repo.
 
-`sandbox settle` removes committed `agent-friendliness-report-*` files from the clone,
+`sandbox settle` removes committed reports, named like
+`agent-friendliness-report-20261103T155624Z.md`, from the clone,
 but git history can still show them. If an agent says it read one, disclose it the
 same way as a test that was read.
 
@@ -190,7 +194,7 @@ changed. Give the agent only this:
 ```text
 Answer these questions about the repository at <sandbox>, using only what is in
 that repository. Don't use the web. Don't run the tests. Don't open files named
-agent-friendliness-report-*, or see them through git history. If you read one
+like agent-friendliness-report-20261103T155624Z.md, or see them through git history. If you read one
 anyway, say which file. If the repository doesn't answer a question, say so rather
 than guessing. For each answer, list the files you opened.
 
@@ -203,7 +207,7 @@ Score correct answers against the key, and record how many files each one took.
 
 ```text
 Read only the test files in the repository at <sandbox>. Don't open production code
-or docs. Don't open files named agent-friendliness-report-*, or see them through git
+or docs. Don't open files named like agent-friendliness-report-20261103T155624Z.md, or see them through git
 history. If you read one anyway, say which file. Write down the business rules these
 tests imply, one per line, with the test file each rule came from.
 ```

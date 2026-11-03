@@ -22,6 +22,9 @@ tmp_root="${TMPDIR:-/tmp}"
 tmp_root="${tmp_root%/}"
 parent=""
 credential_names='TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|ASKPASS|API_?KEY|ACCESS_KEY|PRIVATE_KEY|_KEY$|_PAT$|_AUTH$|_DSN$|^PG|^AWS_|^AZURE_|^GOOGLE_APPLICATION|^KUBECONFIG$|^SSH_AUTH_SOCK$|(DATABASE|DB|POSTGRES|MYSQL|MARIADB|REDIS|MONGO|MONGODB|AMQP|RABBIT|RABBITMQ|KAFKA|ELASTIC|ELASTICSEARCH)[A-Z_]*_(URI|URL|HOST)$'
+# Only the names finish writes: agent-friendliness-report-20261103T155624Z.md. A
+# repo's own -guide.md or -parser.py isn't a past result.
+report_glob=':(glob)**/agent-friendliness-report-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z.md'
 state_fields='sandbox scored_repo commit base_commit save_dir previous_run owner_pid started settled'
 
 die() { echo "sandbox.sh: $*" >&2; exit 1; }
@@ -168,7 +171,7 @@ guard() {
 # path, or report_problem and returning 1. It may not exist yet. Anything that
 # does exist is resolved, so a symlink can't lead out of the scored repo.
 report_folder_ok() {
-  local path="$1" root="$2" dir physical
+  local path="$1" root="$2" dir physical resolved
   report_folder=""
   report_problem=""
   case "$path" in
@@ -194,11 +197,29 @@ report_folder_ok() {
     report_problem="$dir isn't a folder"; return 1
   fi
   physical=$(cd "$dir" && pwd -P)
-  case "$physical${report_folder#"$dir"}/" in
-    "$root"/.git/*) report_problem="$path is inside .git"; return 1 ;;
+  resolved="$physical${report_folder#"$dir"}/"
+  case "$resolved" in
     "$root"/*) ;;
     *) report_problem="$path is outside the scored repo, $root, or a symlink leads out of it"; return 1 ;;
   esac
+  case "${resolved#"$root"}" in
+    */.git/*) report_problem="$path is inside a .git folder"; return 1 ;;
+  esac
+}
+
+# Writes to a temp file first, so a full disk can't leave half a report at the
+# target. ln fails if the name exists and doesn't follow a symlink there. The check
+# before it is for a directory at the target, which ln would link inside.
+publish_report() {
+  (
+    umask 077
+    mkdir -p "$report_folder" || exit 1
+    report_tmp=$(mktemp "$report_folder/.agent-friendliness-report.XXXXXX") || exit 1
+    trap 'rm -f "$report_tmp"' EXIT
+    cat "$save_dir/report.md" > "$report_tmp" || exit 1
+    [ ! -e "$target" ] && [ ! -L "$target" ] || exit 1
+    ln -n "$report_tmp" "$target" || exit 1
+  ) 2>/dev/null
 }
 
 need_settled() {
@@ -414,9 +435,9 @@ cmd_settle() {
   # A committed report lists which seeded bugs survived, so agents in this run
   # shouldn't find it. Git history can still show it, which the prompts cover.
   local reports
-  reports=$(sandbox_git ls-files -- ':(glob)**/agent-friendliness-report-*')
+  reports=$(sandbox_git ls-files -- "$report_glob")
   if [ -n "$reports" ]; then
-    sandbox_git rm --quiet -f -- ':(glob)**/agent-friendliness-report-*'
+    sandbox_git rm --quiet -f -- "$report_glob"
     echo "earlier_reports_removed_from_clone=$(printf '%s\n' "$reports" | wc -l | tr -d ' ')"
   fi
   sandbox_git add -A
@@ -518,16 +539,14 @@ cmd_finish() {
   echo "clone_removed=$parent"
   echo "save_dir=$save_dir"
   # This comes after the comparison above, so the copy doesn't count as a change.
-  # It's checked again because the run may have changed the folder. set -C refuses
-  # to replace an existing file or follow a symlink at the target.
+  # It's checked again because the run may have changed the folder.
   if [ "$have_report_to" = yes ]; then
     target="$report_folder/agent-friendliness-report-$(basename "$save_dir").md"
-    if report_folder_ok "$report_to" "$scored_repo" \
-      && ( umask 077; mkdir -p "$report_folder" && set -C && cat "$save_dir/report.md" > "$target" ) 2>/dev/null; then
+    if report_folder_ok "$report_to" "$scored_repo" && publish_report; then
       echo "report_copy=$target"
       echo "report_copy_note=untracked, and not staged or committed"
     else
-      echo "report_copy=FAILED: couldn't write $target ${report_problem:+($report_problem) }. The report is still at $save_dir/report.md" >&2
+      echo "report_copy=FAILED: couldn't write $target ${report_problem:+($report_problem) }. The report is still at $save_dir/report.md. Read the scored_repo line above too, because this exit code hides a change to the scored repo." >&2
       status=5
     fi
   fi

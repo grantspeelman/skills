@@ -80,9 +80,10 @@ mistakes and a damaged state file, nothing stronger.
   is always outside the scored repo. Paraphrase code and review comments where you
   can, because reports may quote private code. If you see a secret, don't repeat it.
 - Earlier reports can bias a run, because they can list which seeded bugs survived.
-  Don't read a file named `agent-friendliness-report-*` in the repo, and don't count
-  one as documentation or evidence. If one was read, by you or a subagent, say so in
-  the report and `result.json`, the same way as a test that was read.
+  Don't read a file named like `agent-friendliness-report-20261103T155624Z.md` in the
+  repo, and don't count one as documentation or evidence. If one was read, by you or
+  a subagent, say so in the report and `result.json`, the same way as a test that was
+  read.
 - Run `gh` from the scored repo, because the clone has no remote.
 
 ## 1. Read the repo
@@ -279,7 +280,8 @@ nothing. Stop any services you started first.
 `finish` exits 4 if the scored repo changed since setup, and writes what changed
 to `scored-repo-diff.txt`. Tell the user, since it may be their own work. If it
 can't remove the clone it prints the path, so pass that on. If the copy fails, it
-exits 5 and the report is still in `save_dir`.
+exits 5 and the report is still in `save_dir`. On exit 5, also read the `scored_repo`
+line, because exit 5 hides the exit 4 for a changed repo.
 
 Finish by giving the user the `report_copy` path, or the `save_dir` report if there's
 no copy. Say the copy is untracked, that it can quote private code and describe where
