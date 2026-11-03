@@ -3,16 +3,15 @@ name: agent-friendliness-score
 description: >-
   Score a repo out of 100 on how safely AI coding agents can work in it, and
   end with the top three fixes. Measures whether the repo catches a plausible
-  but wrong change by planting bugs in a separate worktree, timing the tests
-  and testing the docs with a fresh agent. Costs real time and agent usage.
-  Work in progress.
+  but wrong change by planting bugs in a throwaway clone, timing the tests and
+  testing the docs with a fresh agent. Costs real time and agent usage. Work in
+  progress.
 disable-model-invocation: true
 ---
 
 # Agent-friendliness score
 
-> **Work in progress.** Scores and verdict bands are not calibrated. Read them
-> as a structured opinion backed by evidence, and say so in every report.
+> This skill is a work in progress.
 
 Score one repo on one question: **if an agent makes a plausible but wrong
 change, will the repo catch it?** Five categories, 20 points each:
@@ -28,120 +27,143 @@ Read these before scoring. They are part of this procedure:
 
 - [references/checks.md](references/checks.md): how to run each measured check.
 - [references/scoring.md](references/scoring.md): what each score means, and
-  the verdict bands.
+  the verdicts.
+
+`scripts/sandbox.sh`, beside this file, manages the throwaway clone. Run it with
+`bash`, from inside the scored repo, for every action on the clone. It keeps its
+paths in a state file and refuses to act unless the clone is the path it recorded
+and is its own git toplevel. Call it `sandbox` below.
+
+| Command | What it does |
+|---------|--------------|
+| `sandbox preflight [url...]` | Tests write and network access, and lists credential variable names. |
+| `sandbox setup [scope]` | Creates the clone and save folder, and prints their paths. |
+| `sandbox paths` | Prints the paths again. |
+| `sandbox run -- <command>` | Runs a command in the clone, with credential variables unset. |
+| `sandbox apply <patch>` | Applies a patch to the clone. |
+| `sandbox capture <path>` | Saves the clone's changes as a patch in the save folder, then restores. |
+| `sandbox restore` | Runs `git reset --hard HEAD` and `git clean -fd` in the clone, with hooks off. |
+| `sandbox finish [--complete]` | Removes the clone, checks it's gone, and compares the scored repo with its state at setup. |
 
 ## Rules for the whole run
 
 - Never push, open a pull request, or change the scored repo's working tree,
-  index or branches. All edits happen in a separate worktree.
-- Don't commit seeded changes. Apply each one with `git apply`, test it, then
-  restore the worktree. No commit means no commit hooks run.
-- Don't copy `.env` files, credentials or other secret files into the worktree
-  or a report. If tests need them, mark the affected checks "not measured"
-  unless the user supplies values that are safe for testing.
+  index, branches or config. All edits happen in the clone, which has no remote.
+- Don't commit seeded changes. Apply, test, restore.
+- From CI, run only test, lint and typecheck steps. Never run release, deploy,
+  publish, terraform or upload steps, even if a test step depends on them.
+- Never copy `.env` files, credentials or other secret files into the clone or a
+  report. `sandbox run` unsets credential-like variables. If tests need one, mark
+  the affected checks "not measured" unless the user gives a value that's safe
+  for testing. Pass it with `sandbox run -- env NAME=value <command>`.
 - If tests appear to reach production or shared services, stop and ask before
   running anything. Do the same if a run does something the plan didn't cover.
 - Never guess a result. A check that could not run is "not measured".
-- Reports go only in the save folder under the home directory, never in the
-  scored repo. Paraphrase code and review comments where you can, because
-  reports may quote private code. If you see a secret, don't repeat it.
+- Reports go only in the save folder, never in the scored repo. Paraphrase code
+  and review comments where you can, because reports may quote private code. If
+  you see a secret, don't repeat it.
+- Run `gh` from the scored repo, because the clone has no remote.
 
 ## 1. Read the repo
 
-Read-only. Find the stack, the test command, the commands CI runs, and how the
-repo documents its setup. Note the current commit and whether the working tree
-has uncommitted changes, because only the commit gets scored.
+Read-only. Run `sandbox preflight`, adding the URL of any package registry this
+stack needs. It exits 3 if the repo has no commits. Stop there and say why. Exit 1
+means the run can't save its work, as described under Blocked access below.
 
-Look for services the tests may touch: Docker Compose files, database and
-queue config, non-localhost URLs in test config, required environment
-variables, and HTTP calls without a recording or stub library.
+If it lists a `leftover_clone` or `active_run`, an earlier run crashed. Tell the
+user. Run `sandbox finish` for an `active_run`, and offer to delete leftover clones.
 
-**Don't open test files yet.** You may list their paths and read test config.
-Step 4 depends on writing bugs before seeing what the tests check.
+Find the stack, CI's test, lint and typecheck commands, and how the repo documents
+its setup. Note whether the working tree has uncommitted changes, because only the
+commit gets scored.
+
+Look for services the tests may touch: Docker Compose files, database and queue
+config, required environment variables, and HTTP calls without a stub library.
+
+**Don't read test files yet.** You may list their paths and read test config. To
+find service connections in test files, search so that only connection details
+print, and drop any credentials from what you repeat:
+
+```bash
+git grep -n -I -o -i -E '[a-z+]+://[^[:space:]"'\'']+|[a-z_]*(host|endpoint|database_url|dsn)[a-z_]*' -- <test paths>
+```
 
 ## 2. Show the plan and confirm once
 
 Show one plan and wait for one confirmation:
 
 ```text
-Repo:       payments-api at 4f2a91c (uncommitted changes are not scored)
-Tests:      bin/test, in a worktree outside the repo
-Install:    bundle install (runs dependency install scripts)
-Services:   local Postgres from docker-compose.yml. No external URLs found.
-Seeded:     10 bugs, plus 5 planted convention violations
-Agents:     2 fresh agents for the docs check
-Other:      npx jscpd for duplication; read-only gh calls for CI history
-Budget:     about 45 minutes, stopping at 60. Test runs: about 18.
-Saved to:   ~/.agent-friendliness-score/payments-api-1a2b3c4d/ (may quote code)
+Repo:         payments-api at 4f2a91c (uncommitted changes are not scored)
+Commands:     bin/test, bin/lint, from CI. Skipped: deploy, publish-gem.
+Install:      bundle install in a throwaway clone (runs install scripts)
+Services:     Postgres from docker-compose.yml. No external URLs found.
+Local data:   tests write to the local database payments_test
+Credentials:  unset for test runs: AWS_SECRET_ACCESS_KEY, GH_TOKEN
+Seeded:       10 bugs, plus 5 planted convention violations
+Agents:       3 fresh agents, one for the bugs and two for the docs check
+Other:        npx jscpd for duplication; read-only gh calls for CI history
+Access:       save folder ok, temp ok, network ok, gh ok
+Budget:       unknown until the first test run. Stops at 60 minutes.
+Saved to:     ~/.agent-friendliness-score/payments-api-1a2b3c4d/ (may quote code)
 ```
 
-Estimate time from CI history when you can. Otherwise say the estimate is
-unknown until the first test run. The budget in the plan is the limit, and
-[references/checks.md](references/checks.md) says how to stay inside it without
-asking again. If the user declines, stop. If they change something, follow it.
+Estimate time from CI history when you can, otherwise say "unknown". The budget is
+the limit, and [references/checks.md](references/checks.md) says how to stay inside
+it without asking again. If the user declines, stop. If they change something,
+follow it.
+
+**Blocked access.** Hosts that sandbox commands can block writes outside the
+project, or the network. Say what preflight found, and ask the user to allow it
+for this run. If the save folder stays blocked, stop, or ask for another folder
+outside the repo and set `AFS_HOME=<folder>` on every `sandbox` command. If the
+network stays blocked, installs and `gh` calls will fail, so the plan must list
+those checks as not measured.
 
 ## 3. Set up
 
-Create the save folder and a worktree outside the repo. The `-c` flag stops the
-repo's `post-checkout` hook from running.
+Run `sandbox setup`, passing the package path as the scope if there is one. It
+prints the `sandbox` clone path, the commit, the `save_dir` and the `previous_run`.
+Run `sandbox paths` if you need them again.
 
-```bash
-root_commit=$(git rev-list --max-parents=0 HEAD | tail -1)
-repo_id="$(basename "$(git rev-parse --show-toplevel)")-${root_commit:0:8}"
-stamp=$(date -u +%Y%m%dT%H%M%SZ)
-save_dir="$HOME/.agent-friendliness-score/$repo_id/$stamp"
-mkdir -p "$save_dir/seeded" && chmod -R go-rwx "$HOME/.agent-friendliness-score"
-worktree=$(mktemp -d)/repo
-git -c core.hooksPath=/dev/null worktree add --detach "$worktree" HEAD
-git config --local --get core.hooksPath > "$save_dir/hooks-path-before" || true
-```
+Install dependencies with `sandbox run`, the way the repo documents. If install
+fails, follow "When the baseline fails" in
+[references/checks.md](references/checks.md). Setup warns about submodules, Git
+LFS and shallow history. A check that fails only because the clone has no
+`origin`, such as a script using `origin/main`, is "not measured".
 
-Install dependencies in the worktree the way the repo documents, with `HUSKY=0`
-and `LEFTHOOK=0` set so install scripts don't rewrite the git config the worktree
-shares with the repo. If install fails, record why. It counts against Feedback
-speed only if the repo's docs are at fault, as
-[references/checks.md](references/checks.md) explains.
-
-## 4. Write the seeded bugs, then run the measured checks
+## 4. Run the measured checks
 
 Run these in order, as [references/checks.md](references/checks.md) describes:
 
-1. Write the seeded bugs from the code and docs, before reading any test.
-2. Run the baseline twice and record timings.
+1. Have a fresh agent write the seeded bugs.
+2. Run the baseline.
 3. Run the seeded bugs.
-4. Run the planted convention violations.
+4. Run the planted violations.
 5. Run the two fresh-agent checks.
 6. Run the consistency counts.
 7. Read CI and review history with `gh`, if available.
 
-Restore the worktree between runs, and check you are in it first:
-
-```bash
-git -C "$worktree" checkout -- . && git -C "$worktree" clean -fd
-```
-
-If the baseline fails or there are no tests, carry on and score that. Don't
-abort. A repo with no tests is a real result: Verification is 0.
+Run `sandbox restore` between changes to the clone. Don't use bare git commands
+to restore. If there are no tests, carry on. That's a measured result, 0 out of 20
+for Verification.
 
 ## 5. Read the static evidence
 
-Now read the tests. Collect the static evidence each category in
-[references/scoring.md](references/scoring.md) asks for, including a sample of
-tests with weak or no assertions and tests that mirror the implementation.
+Now read the tests, and any earlier report for this repo. Collect the static
+evidence each category in [references/scoring.md](references/scoring.md) asks for.
 
 ## 6. Score
 
-Apply [references/scoring.md](references/scoring.md). Label every piece of
-evidence **static** or **measured**. Measured results decide the score, even
-when they are worse than the static evidence suggests.
+Apply [references/scoring.md](references/scoring.md). Label every piece of evidence
+**static** or **measured**.
 
 ## 7. Choose the top three fixes
 
-Rank by points gained, and put Verification first on a tie. Each fix must name
-the metric it moves, the current and target values, and roughly how many points
-it's worth. Make fixes about this repo and about classes of mistake. "Add tests
-for these ten patches" only games the rerun, so don't suggest it. Don't apply
-any fix. This skill only reports.
+Rank by points gained, and put Verification first on a tie. Each fix must name the
+metric it moves, the current and target values, and roughly how many points it's
+worth. Make fixes about this repo and about classes of mistake. "Add tests for
+these ten patches" only games the rerun, so don't suggest it. Don't apply any fix.
+This skill only reports.
 
 ## 8. Report, save and clean up
 
@@ -151,52 +173,50 @@ Show the report in this shape. The data here is made up.
 # Agent-friendliness: payments-api at 4f2a91c
 
 **70/100: Agents can work here with review.**
-Work in progress: scores are not calibrated.
+This skill is a work in progress.
 
-| Category       | Score | Assessed | Main evidence                                 |
-|----------------|-------|----------|-----------------------------------------------|
-| Verification   | 15    | 20       | measured: 7 of 10 seeded bugs caught          |
-| Feedback speed | 15    | 20       | measured: relevant tests in 3m 40s            |
-| Context        | 10    | 20       | measured: 4 of 6 answers correct              |
-| Consistency    | 15    | 20       | measured: 4.1% duplication (low confidence)   |
-| Guardrails     | 15    | 20       | measured: 4 of 5 planted violations caught    |
+| Category       | Score | Main evidence                                 |
+|----------------|-------|-----------------------------------------------|
+| Verification   | 15/20 | measured: 7 of 10 seeded bugs caught          |
+| Feedback speed | 15/20 | measured: relevant tests in 3m 40s            |
+| Context        | 10/20 | measured: 4 of 6 answers correct              |
+| Consistency    | 15/20 | measured, low confidence: 4.1% duplication    |
+| Guardrails     | 15/20 | measured: 4 of 5 planted violations caught    |
 
 ## Evidence
 One section per category. List each item with its label, static or measured,
 and each check marked not measured or N/A with the reason.
 
 ## Seeded bugs
-A table of bug, risk category, caught or missed, and what caught it.
+Who wrote them. A table of bug, risk category, caught or missed, and what caught
+it. Name any bug "missed by relevant tests".
 
 ## Top three fixes
 1. Add request tests for permission checks on refund endpoints. Moves the
    seeded catch rate from 70% to 90% (Verification 15 to 20, +5 points).
 
 ## Since the last run
-Total 60 to 70. Verification 10 to 15. Seeded bugs: 6 of 10 reused still
-caught, 2 of 3 new caught. Commit 91bd03e to 4f2a91c.
+Total 60 to 70. Verification 10 to 15. Seeded bugs: 5 of 7 reused caught, 2 of 3
+new caught, 7 of 10 together. Commit 91bd03e to 4f2a91c.
 ```
 
-If anything went unmeasured, show the total as points assessed, such as
-`60/80 assessed`, so a gap doesn't read as a low score.
+If a category is static only, list it separately with its score out of 10, and
+show the total as measured points, such as `45/60 measured`.
+[references/scoring.md](references/scoring.md) sets the headline and verdict.
 
-Compare against the newest earlier folder for this repo, if there is one.
+If `previous_run` is set, compare against it. It's the newest run that finished.
 
-Save to `$save_dir`:
+Save these in `save_dir`, alongside the patches and context files from step 4:
 
 - `report.md`: the report above.
-- `result.json`: commit, date, scores, assessed points, raw metrics, and the
-  searches used for Consistency, so the next run can compare and repeat them.
-- `seeded/NN-<risk-category>.patch`: each seeded bug, with its result recorded
-  in `result.json`.
+- `result.json`: commit, date, scores, whether each category is measured, raw
+  metrics, who wrote the bugs, the result for each patch, and the exact commands
+  and searches used, so the next run can compare and repeat them.
 
-Then clean up, even if the run stopped early. Stop any services you started.
+Then run `sandbox finish --complete`. If the run stops early, run `sandbox finish`,
+which leaves the run out of later comparisons. Stop any services you started first.
 
-```bash
-git worktree remove --force "$worktree" && git worktree prune
-```
-
-Check that `git status` in the scored repo matches what you noted in step 1,
-that `core.hooksPath` matches `hooks-path-before`, and tell the user if either
-changed. Finish by telling the user where the report is, and that it may quote
-private code.
+`finish` exits 4 if the scored repo changed since setup, and writes what changed
+to `scored-repo-diff.txt`. Tell the user, since it may be their own work. If it
+can't remove the clone it prints the path, so pass that on. Finish by telling the
+user where the report is, and that it may quote private code.

@@ -1,125 +1,138 @@
 # Scoring
 
-All thresholds here are provisional.
+## Scoring a category
 
-## How to score a category
+A category scores 0, 5, 10, 15 or 20. There are no scores in between, because they
+would add noise between runs. Put partial progress in the evidence and raw metrics.
 
-1. Each category scores 0, 5, 10, 15 or 20. Pick the highest level whose
-   requirements are all met. There are no scores in between, because they would
-   add noise between runs. Put partial progress in the evidence and raw metrics.
-   In the tables, use a level's Measured clause when that category's measured
-   check ran, and its Static clause when it didn't.
-2. **Static evidence alone stops at 10.** Static means a file exists or a tool is
-   configured. Measured means this run saw a result. Anything above 10 needs a
-   measured result.
-3. **Measured results win.** When a category's measured check ran, its result
-   decides the level, even if the static evidence looks better.
-4. **N/A.** If a requirement can't apply to this repo, such as performance
-   budgets on a small CLI, mark it N/A and drop it from the level. The category
-   stays out of 20, so its points move to what remains.
-5. **Not measured.** If a category's measured check did not run, score it on
-   static evidence, and it counts as 10 assessed points instead of 20. If some of
-   its measured checks ran, score on those, and it stays at 20 assessed points.
-   List the rest as not measured.
+A category is **measured** if any of its measured checks ran, or if you confirmed
+the thing it measures doesn't exist. No tests is a measured 0 out of 20 for
+Verification, and no checks at all is a measured 0 for Guardrails. Use a level's
+Measured clause. Measured results decide the level, even when the static evidence
+looks better.
 
-The total is the sum of scores out of the sum of assessed points. Below 100
-assessed, show it as `60/80 assessed`.
+A category is **static only** if none of its measured checks ran. Use the Static
+clauses, which stop at 10. Static means a file exists or a tool is configured.
+
+To pick the level:
+
+1. If level 0's condition holds, score 0.
+2. Otherwise take the highest of 20, 15 and 10 whose requirements are all met.
+3. If none is met, score 5. This covers any result that falls between levels.
+
+Two kinds of missing requirement are treated differently:
+
+- **N/A:** it can't apply to this repo, such as performance budgets on a small CLI.
+  Drop it from the level. The category stays out of 20.
+- **Not measured:** it applies, but the check couldn't run. It's never N/A, and it
+  blocks any level that names it. List it in the report.
 
 ## Verification
 
 Can an agent prove a change is correct? "Catch rate" is the share of seeded bugs
 caught.
 
-| Score | Requires |
-|-------|----------|
-| 0 | No tests, or no seeded bugs caught. |
-| 5 | Static: tests exist, but CI doesn't run them or a sample shows mostly weak assertions. Measured: catch rate below 40%, or nothing in the suite passes. |
-| 10 | Static: CI runs the tests, coverage is reported, and a sample shows meaningful assertions. Measured: catch rate at least 40%. |
-| 15 | Measured: catch rate at least 60%. |
-| 20 | Measured: catch rate 85% or more, a missing permission check was caught where one applies, and a sample of tests shows no self-confirming pattern. |
+A test is **self-confirming** if it would still pass with the behaviour wrong: it
+has no assertion, checks only a value it set itself or a mock it set up, or works
+out its expected value by copying the implementation. Sample 20 tests across the
+hotspots.
+
+| Score | Static | Measured |
+|-------|--------|----------|
+| 0 | No tests. | No tests, no seeded bugs caught, or a suite where nothing passes. |
+| 5 | Tests exist, but CI doesn't run them, or most of the sample is self-confirming. | Catch rate above 0% and below 40%. |
+| 10 | CI runs the tests, coverage is reported, and at most 5 of the sample are self-confirming. | Catch rate at least 40%. |
+| 15 | | Catch rate at least 60%, from at least 8 valid bugs. |
+| 20 | | Catch rate at least 85%, from at least 8 valid bugs, a missing permission check caught where one applies, and at most 1 of the sample self-confirming. |
 
 Coverage is low-weight evidence, and a high number doesn't raise the level.
 
 A mutation score the repo already reports, from a run in the last 30 days, is
 supporting evidence. If it disagrees with the catch rate, report both, and the
-catch rate decides. If seeded bugs did not run, it counts as the measured result,
-at most 15: 80% or more scores 15, 60% to 79% scores 10, and below 60% scores 5.
+catch rate decides. If seeded bugs did not run, it counts as the measured result:
+at least 80% scores 15, at least 60% scores 10, and anything lower scores 5.
 
 ## Feedback speed
 
-How fast does an agent get a signal it can trust? "Relevant tests" is the time
-for the tests relevant to a typical change.
+How fast does an agent get a signal it can trust? "Relevant tests" is the time for
+the tests relevant to a typical change.
 
-| Score | Requires |
-|-------|----------|
-| 0 | No test command can be found or run. |
-| 5 | Static: a test command exists but is undocumented. Measured: following the docs fails, or relevant tests take over 30 minutes. |
-| 10 | Static: one documented command proves a change works, and running a single test file is documented. Measured: the command works, and relevant tests take under 30 minutes. |
-| 15 | Measured: the documented command works on a clean checkout, relevant tests take under 5 minutes, and one test file runs in under 60 seconds. |
-| 20 | Measured: relevant tests take under 60 seconds, one test file runs in under 15 seconds, no local flakes, flaky rate at or below 2%, CI under 15 minutes, and an agent can read logs and errors from the repo's documented tools. |
+| Score | Static | Measured |
+|-------|--------|----------|
+| 0 | No test command can be found. | No test command can be found or run. |
+| 5 | A test command exists but is undocumented. | Following the docs fails, or relevant tests take 30 minutes or more. |
+| 10 | One documented command proves a change works, and running a single test file is documented. | The documented command works, and relevant tests take under 30 minutes. |
+| 15 | | The documented command works on a clean checkout, relevant tests take under 5 minutes, and one test file runs in under 60 seconds. |
+| 20 | | Relevant tests take under 60 seconds, one test file runs in under 15 seconds, no local flakes, flaky rate at most 2%, CI under 15 minutes, and an agent can read logs and errors from the repo's documented tools. |
 
 ## Context
 
-Can an agent find what it needs without flooding its context? "Answers" is the
-share of repo questions answered correctly. "Rules match" is defined in
+Can an agent find what it needs without flooding its context? "Answers" is the share
+of repo questions answered correctly. "Rules match" is defined in
 [checks.md](checks.md).
 
-| Score | Requires |
-|-------|----------|
-| 0 | No usable README or agent instructions. Measured: answers below 20%. |
-| 5 | Static: a README only, or agent instructions so long they don't work as an index. Measured: answers 20% to 49%. |
-| 10 | Static: an `AGENTS.md` or `CLAUDE.md` of about 100 to 150 lines that points to deeper docs, rules that carry reasons, and at most 3 servers in committed MCP config. Measured: answers at least 50%. |
-| 15 | Measured: answers at least 70%, and rules match at least 50%. |
-| 20 | Measured: answers 85% or more, rules match at least 75%, and a median of 5 files or fewer opened per answer. |
+| Score | Static | Measured |
+|-------|--------|----------|
+| 0 | No usable README or agent instructions. | Answers below 20%. |
+| 5 | A README only, or agent instructions so long they don't work as an index. | Answers at least 20%. |
+| 10 | An `AGENTS.md` or `CLAUDE.md` of at most about 150 lines that points to deeper docs, rules that carry reasons, and at most 3 servers in committed MCP config. | Answers at least 50%. |
+| 15 | | Answers at least 70%, and rules match at least 50%. |
+| 20 | | Answers at least 85%, rules match at least 75%, and a median of 5 files or fewer opened per answer. |
 
 Only committed MCP config counts. What's on a developer's machine isn't evidence
 about the repo.
 
 ## Consistency
 
-Is there one way to do each thing? This is the weakest category, because counts
-can't judge intent. Mark it low confidence in every report. A "competing concern"
-is one with two or more approaches and no preferred one named in the docs.
+Is there one way to do each thing? This is the weakest category, because counts can't
+judge intent. Mark it low confidence in every report. A **competing concern** has two
+or more approaches and no preferred one named in the docs.
 
-| Score | Requires |
-|-------|----------|
-| 0 | Measured: duplication over 15%, and at least two concerns have three or more approaches. |
-| 5 | Static: no stated conventions. Measured: duplication 10% or more, or at least half the concerns are competing. |
-| 10 | Static: conventions documented for most concerns, or a configured size or complexity limit. Measured: duplication under 10%, and at most two competing concerns. |
-| 15 | Measured: duplication under 5%, at most one competing concern, and at most 3 non-generated files over about 1,000 lines. |
-| 20 | Measured: duplication under 3%, no competing concerns, no file over about 1,000 lines in both hotspot lists, and CI enforces a size or complexity limit. |
-
-If duplication is not measured, drop it and judge on the rest.
+| Score | Static | Measured |
+|-------|--------|----------|
+| 0 | | Duplication over 15%, and at least two concerns have three or more approaches. |
+| 5 | No stated conventions. | Duplication 10% or more, or more than two competing concerns. |
+| 10 | Conventions documented for most concerns, or a configured size or complexity limit. | Duplication under 10% or not measured, and at most two competing concerns. |
+| 15 | | Duplication under 5%, at most one competing concern, and at most 3 non-generated files over about 1,000 lines. |
+| 20 | | Duplication under 3%, no competing concerns, no file over about 1,000 lines on both hotspot lists, and CI enforces a size or complexity limit. |
 
 ## Guardrails
 
 Do mechanical checks enforce the conventions? "Catch rate" is the share of planted
 violations caught.
 
-| Score | Requires |
-|-------|----------|
-| 0 | No linter, formatter or other mechanical check. |
-| 5 | Static: tools are configured, but CI doesn't run them. Measured: catch rate below 40%. |
-| 10 | Static: CI runs a linter and formatter, plus a security scanner where the stack has one. Measured: catch rate at least 40%. |
-| 15 | Measured: catch rate at least 60%, and CI runs a security scanner where the stack has one. |
-| 20 | Measured: catch rate 85% or more, plus CI-enforced module boundary checks, performance budgets on key paths, and a rule or structural test for every convention corrected twice. Mark any of these N/A where it can't apply. |
+| Score | Static | Measured |
+|-------|--------|----------|
+| 0 | No linter, formatter or other mechanical check. | No such checks, or no violations caught. |
+| 5 | Tools are configured, but CI doesn't run them. | Catch rate above 0% and below 40%. |
+| 10 | CI runs a linter and formatter, plus a security scanner where the stack has one. | Catch rate at least 40%. |
+| 15 | | Catch rate at least 60%, and CI runs a security scanner where the stack has one. |
+| 20 | | Catch rate at least 85%, plus CI-enforced module boundary checks and performance budgets on key paths, each where it applies. If review history is readable, every convention corrected twice also has a rule or structural test. |
 
-## Verdict
+"Corrected twice" is the one optional item: unreadable review history doesn't block
+level 20.
 
-Use the percentage of assessed points.
+## Score and verdict
 
-| Percent | Verdict |
-|---------|---------|
-| 85 to 100 | Basic harness is enough. |
-| 65 to 84 | Agents can work here with review. |
-| 40 to 64 | Expect wrong changes to get through. |
+Static-only categories never count towards the score. Show them separately, out of
+10. A failed check can't raise the score, because it takes the category out of the
+sum rather than leaving its static points in.
+
+The **score** is the measured categories' points as a percentage of their available
+points, rounded down. With all five measured, that's the total out of 100. Work out
+the headline in this order, and stop at the first that applies:
+
+1. **Not proven.** If Verification isn't measured, or fewer than 60 points are
+   measured, the verdict is "Not proven: the repo's ability to catch a wrong change
+   was not measured". Show the points, such as `45/60 measured`, with no band.
+2. **Verification cap.** Verification at 0 caps the score at 39. Verification at 5
+   caps it at 64. Show the uncapped figure too, such as
+   `64/100 (78 before the Verification cap)`.
+3. **Band.** Read the verdict from the score, after any cap.
+
+| Score | Verdict |
+|-------|---------|
+| At least 85 | Basic harness is enough. |
+| At least 65 | Agents can work here with review. |
+| At least 40 | Expect wrong changes to get through. |
 | Below 40 | Expect to hit the wall. |
-
-Three rules can override the band:
-
-- **Verification below 10** limits the verdict to "Expect wrong changes to get
-  through", however high the total is.
-- **Verification at 0** makes the verdict "Expect to hit the wall".
-- **Verification not measured** replaces the verdict with "Not proven: the repo's
-  ability to catch a wrong change was not measured", because that's the question
-  this score exists to answer.

@@ -1,100 +1,148 @@
 # Measured checks
 
-Run these in the worktree, in this order. Save raw numbers for `result.json`.
+Run these in order. `sandbox` means `bash scripts/sandbox.sh`, as in
+[SKILL.md](../SKILL.md), run from the scored repo. Paths like `seeded/` are inside
+`save_dir`. Save raw numbers for `result.json`.
+
+"Commands" below means CI's test, lint and typecheck steps, or the documented
+equivalents if there's no CI. Save them in `result.json`, and on a rerun use the
+saved ones unless they no longer exist.
 
 ## Budget
 
-The plan sets a time budget, 60 minutes by default. Don't ask again to stay
-inside it. If the full suite takes over 5 minutes, run each seeded bug against
-its relevant tests first, and run the full suite only on bugs those tests miss
-while budget remains. If budget runs out, the bugs that didn't run leave the
-sample. Say so in the report.
+The plan sets a time budget, 60 minutes by default. Never ask again to stay inside
+it. An "unknown" estimate is fine, because the budget is the limit.
+
+- Keep the last quarter of the budget for planted violations and fresh agents.
+  Stop running seeded bugs when you reach it.
+- **Suite over 5 minutes:** run each bug against its relevant tests first. Run the
+  full commands only on bugs those tests miss, while budget remains.
+- **First baseline over a third of the budget:** skip the second baseline, so local
+  flakes are not measured, and use relevant tests only.
+- **First baseline still running at three quarters of the budget:** stop it. Seeded
+  bugs are not measured.
+- A bug missed by its relevant tests, with no budget left for the full commands,
+  counts as missed and is labelled "missed by relevant tests". A bug that never
+  ran leaves the sample, and the report says so.
 
 ## Seeded bugs (Verification)
 
-**Write them before reading any test.** Use the production code and docs only,
-and save every patch to `$save_dir/seeded/` before the baseline runs.
+### Writing them
 
-Write 10 bugs across these risk categories, at least one each where it applies:
+A fresh subagent writes the bugs, without seeing any tests, so its choices don't
+fit the suite. First list:
 
-- boundary or date logic
-- missing permission check
-- wrong default
-- wrong error handling
-- dropped validation
+- **Test paths**, from
+  `git -C <sandbox> ls-files | grep -E '(^|/)(tests?|specs?|__tests__|e2e|features)/|[._]test\.|[._]spec\.|Test\.'`,
+  plus anything else the repo uses.
+- **Hotspots**, the production files most changed in the last 6 months, from
+  `git log --since='6 months ago' --name-only --format= | sort | uniq -c | sort -rn`,
+  without the test paths. If history is shallow, use the largest production files.
 
-If a category doesn't apply, use another mistake that fits the domain, such as a
-wrong state transition or a rounding error. In a repo with little logic, seed
+On a rerun, read only the earlier patches at this stage, not the earlier report.
+Copy at most 7 that pass `git -C <sandbox> apply --check`, keeping the highest
+numbered, then ask for enough new bugs to make 10. That's always at least 3 new.
+Tests written against old patches would otherwise inflate the score.
+
+Give the subagent this prompt, with no other findings from this run:
+
+```text
+Write <N> bugs for a test of this repository's safety checks. The code is in
+<sandbox>. Read only production code and docs.
+
+Don't open these test paths, and don't use git history to see them: <test paths>
+Inline tests count as tests. In Rust, stop reading a file at #[cfg(test)], for
+example with awk '/#\[cfg\(test\)\]/{exit}1' <file>. Ignore doctests, Python >>>
+examples and in-source test blocks. If you read one anyway, say which file.
+
+Choose sites from these often-changed files first: <hotspots>
+Don't repeat these existing bugs: <reused patch paths, or none>
+
+Cover these risk categories, at least one each where it applies: boundary or date
+logic, missing permission check, wrong default, wrong error handling, dropped
+validation. If one doesn't apply, use another mistake that fits the domain, such
+as a wrong state transition or a rounding error. In a repo with little logic, use
 what can go wrong there: a broken internal link, invalid config, a removed
 required field.
 
-Each bug must:
+Each bug must be a small change to production code, about 1 to 10 lines. It must
+be a mistake a capable agent could plausibly make. It must change behaviour in a
+way this repository's users could notice. It must compile. Leave test files alone,
+and don't leave a comment or name that gives it away.
 
-- be a small change to production code, about 1 to 10 lines
-- be a mistake a capable agent could plausibly make, in code that matters to
-  this repo's users
-- change behaviour, so a user could notice the difference
-- leave test files alone, with no comment or name that gives it away
+For each bug, edit the file in <sandbox>, then run this from <scored repo>:
+  bash <script> capture seeded/<NN>-<risk-category>.patch
+Number from <next number>. That saves the patch and restores the code. Don't run
+any tests. Finish with one line per bug: its number, what is wrong, who notices.
+```
 
-On a rerun, reuse earlier patches from the newest save folder if they pass
-`git apply --check`, then top up to 10. Always write at least 3 new bugs, even if
-that takes the sample above 10, because tests written against old patches would
-otherwise inflate the score. Report reused and new catch rates separately.
+Replacements come from the same subagent, or a new one with this prompt if it can't
+be resumed. Tell it only the patch number and that the patch was invalid, never
+which tests ran or failed. Delete the replaced patch.
 
-**Baseline.** Run the commands CI runs, twice, on the clean worktree. Record the
-failures from each. A test that fails in only one run is flaky. Tests that fail
-in either run can't count as catching a bug.
+**No subagent on this host?** Show the user the prompt and ask them to run it in a
+new session. If they would rather not, write the bugs yourself with the same rules.
+The report and `result.json` must then say this session wrote them, and whether it
+had read any tests by then. Do the same if the subagent read a test.
 
-**Run each bug.** Apply the patch, run the commands, record the result, restore.
+### Running them
 
-- A bug counts as caught when a check fails in a way the baseline didn't, because
-  of the changed behaviour. Record which check caught it.
-- If a single test is the only new failure, restore the worktree and rerun that
-  test. If it also fails without the patch, it's flaky and doesn't count.
-- A bug that doesn't compile doesn't count. Replace it without reading test
-  contents. Do the same for a failure caused only by the patch's style, such as
-  a lint error on an unused variable.
-- If you find a bug didn't change behaviour after all, replace it too.
+**Baseline.** Run the commands twice on the clean clone with `sandbox run`. Record
+failures from each run. A test that fails in only one is a local flake. Tests that
+fail in either can't count as catching a bug.
 
-Report the sample size beside the catch rate, such as "7 of 10". Fewer than 5
-valid bugs that ran means seeded bugs are "not measured".
+**Each bug.** Run `sandbox apply seeded/<patch>`, then the commands, then
+`sandbox restore`.
 
-**When the baseline fails.** Work out why:
+A bug is **caught** when a check fails in a way the baseline didn't, because of the
+wrong behaviour. Record which check caught it. A type checker rejecting the wrong
+behaviour is a catch.
 
-- Tests fail after following the repo's documented setup: score it. Compare
-  seeded runs against the baseline's failures. If nothing passes, seeded bugs
-  can't be caught, so Verification is at most 5.
-- Setup needs something the docs don't mention: score it, as a Feedback speed
-  failure, and mark seeded bugs "not measured".
-- The docs are right and this machine lacks it, such as a missing toolchain or a
-  secret you can't copy: mark the affected checks "not measured", and say what
-  was missing.
+- These don't count as catches: gates that fail on any patch, such as
+  `git diff --exit-code` or a coverage threshold any change trips, and style-only
+  failures, such as a lint error on an unused variable.
+- A bug is **invalid** and gets replaced if it has a syntax error or an undefined
+  name, if it trips only those gates, or if it turns out not to change behaviour.
+- If a single test is the only new failure, run `sandbox restore` and rerun that
+  test. If it fails without the patch too, it's a flake and doesn't count.
+
+The catch rate covers all bugs in the sample together, reused and new. Report the
+sample size with it, and on a rerun report the reused and new rates separately.
+Fewer than 5 valid bugs that ran means seeded bugs are "not measured".
+
+### When the baseline fails
+
+- **Tests fail after following the repo's documented setup:** score it. Compare
+  seeded runs against the baseline's failures. A suite where nothing passes catches
+  nothing, so Verification is 0.
+- **Setup needs something the docs don't mention:** that's a measured Feedback speed
+  failure. Mark seeded bugs "not measured".
+- **The docs are right and this machine lacks it,** such as a toolchain or a secret
+  you can't copy: mark the affected checks "not measured", and say what was missing.
 
 ## Timings (Feedback speed)
 
-- **Full run:** the second baseline, so caches don't distort it. Record install
-  time separately.
-- **One test file:** time a typical file, using the documented way if there is
-  one.
-- **Relevant tests:** choose a recently changed production file from `git log`
-  and time the tests covering it. If the repo has no way to run only those,
-  this time is the full run.
+- **Full run:** the second baseline, so caches don't distort it, or the first if the
+  second was skipped. Record install time separately.
+- **One test file:** time a typical file, using the documented way if there is one.
+- **Relevant tests:** take a production file from the hotspots and time the tests
+  covering it. If the repo can't run only those, this time is the full run.
 - **Local flakes:** tests that differed across the two baselines.
 
-With `gh` and GitHub Actions, read the last 50 runs on the default branch:
+With `gh` and GitHub Actions, run this from the scored repo:
 
 ```bash
-gh run list --branch <default> --limit 50 \
-  --json conclusion,attempt,startedAt,updatedAt,workflowName
+gh run list --workflow <main workflow> --branch <default branch> --limit 50 \
+  --json conclusion,attempt,startedAt,updatedAt
 ```
 
-CI time is the median duration of successful runs of the main workflow. Treat the
-share of runs with `attempt` above 1 as the flaky rate. Without `gh`, or on
-another CI system, mark both "not measured".
+CI time is the median duration of successful runs. Treat the share of runs with
+`attempt` above 1 as the flaky rate. Without `gh`, or on another CI system, mark
+both "not measured".
 
 ## Planted violations (Guardrails)
 
-Plant 5 violations, one at a time, picking from these where they apply:
+Plant 5 violations, picking from these where they apply:
 
 - a formatting break
 - a breach of a configured lint rule
@@ -103,32 +151,37 @@ Plant 5 violations, one at a time, picking from these where they apply:
 - an obvious security flaw, such as unsanitised input in a query
 - a fake credential in a real provider's format, invented for this run
 
-Run the check commands as CI runs them. If a scanner reads staged files, staging
-in the worktree is fine. A violation counts as caught only if CI runs that check,
-or the documented setup installs a hook that does. Fewer than 3 applicable
-violations means this check is "not measured".
+For each, edit the clone, run `sandbox capture violations/<NN>-<type>.patch`, then
+apply it, run the commands as CI runs them, and restore. If a scanner reads staged
+files, staging in the clone is fine. On a rerun, reuse the earlier patches that
+still apply, and top up to 5.
+
+A violation counts as caught only if CI runs that check, or the documented setup
+installs a hook that does. Fewer than 3 applicable violations means this check is
+"not measured".
 
 ## Fresh-agent checks (Context)
 
-These need an agent that has not seen this run. Start each one in a fresh-context
-subagent, pointed at the clean worktree, and don't pass your findings.
+Each needs an agent that hasn't seen this run. Start each in a fresh-context
+subagent, pointed at the clean clone, and don't pass your findings.
 
-No subagent on this host? Show the user the prompt and the worktree path, and ask
-them to run it in a new session and paste the answer back. If they would rather
-not, mark the check "not measured". Never answer these prompts yourself, because
-you've already read the repo.
+No subagent on this host? Show the user the prompt and the clone path, and ask them
+to run it in a new session and paste the answer back. If they would rather not,
+mark the check "not measured". Never answer these prompts yourself, because you've
+already read the repo.
 
 **Repo questions.** Write 6 questions an agent starting a task here would need
 answered, with an answer key you checked against the code. For example: which
 command proves a change to a given area works, where a given rule is enforced,
-which module owns a given concern, what a new endpoint must do. Give the agent
-only this:
+which module owns a given concern, what a new endpoint must do. Save both in
+`context/questions.md`. On a rerun, reuse them, updating the key if the code
+changed. Give the agent only this:
 
 ```text
-Answer these questions about the repository at <worktree>, using only what is in
-that repository. Don't use the web. Don't run the tests. If the repository
-doesn't answer a question, say so rather than guessing. For each answer, list
-the files you opened.
+Answer these questions about the repository at <sandbox>, using only what is in
+that repository. Don't use the web. Don't run the tests. If the repository doesn't
+answer a question, say so rather than guessing. For each answer, list the files
+you opened.
 
 <questions>
 ```
@@ -138,15 +191,15 @@ Score correct answers against the key, and record how many files each one took.
 **Business rules from tests.** Give the agent only this:
 
 ```text
-Read only the test files in the repository at <worktree>. Don't open production
-code or docs. Write down the business rules these tests imply, one per line, with
-the test file each rule came from.
+Read only the test files in the repository at <sandbox>. Don't open production code
+or docs. Write down the business rules these tests imply, one per line, with the
+test file each rule came from.
 ```
 
 Compare the list with the docs, plus GitHub issues if `gh` can reach them. Rules
-match is the share of written rules the docs confirm. List documented rules that
-no test implies, since these are gaps for the top fixes. If the repo has no
-tests, this check is N/A.
+match is the share of written rules the docs confirm. List documented rules no test
+implies, since these are gaps for the top fixes. If the repo has no tests, this
+check is N/A.
 
 ## Consistency counts
 
@@ -157,19 +210,19 @@ deliberate choice, so label it low confidence.
   excluding generated and vendored code. If none can run, mark it "not measured".
 - **Competing patterns:** choose at least 4 concerns that apply, such as error
   handling, validation, data access, HTTP calls, config, logging, auth checks or
-  state. Count the distinct approaches with repeatable searches, and check
-  whether the docs name a preferred one. Save the search commands, and reuse
-  them on a rerun.
-- **Hotspots:** list the 10 largest non-generated files and the 10 most changed
-  in the last 6 months from `git log`. Note files on both lists.
+  state. Count the distinct approaches with repeatable searches, and check whether
+  the docs name a preferred one. Save the search commands, and reuse them on a rerun.
+- **Hotspots:** the hotspot list above, plus the 10 largest non-generated files.
+  Note files on both lists. With shallow history, this is "not measured".
 
 ## Review history (Guardrails, optional)
 
-"Corrected twice" counts only if `gh` can read review comments. Read recent ones:
+"Corrected twice" counts only if `gh` can read review comments. Run from the scored
+repo:
 
 ```bash
-gh api "repos/{owner}/{repo}/pulls/comments?per_page=100"
+gh api "repos/{owner}/{repo}/pulls/comments?per_page=100&sort=created&direction=desc"
 ```
 
 Find conventions corrected at least twice, then check whether a lint rule or
-structural test now enforces each one. Paraphrase. Otherwise this item is N/A.
+structural test now enforces each one. Paraphrase.
