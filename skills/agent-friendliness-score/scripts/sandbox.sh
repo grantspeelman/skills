@@ -25,6 +25,8 @@ credential_names='TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|ASKPASS|API_?KEY|ACCES
 # Only the names finish writes: agent-friendliness-report-20261103T155624Z.md. A
 # repo's own -guide.md or -parser.py isn't a past result.
 report_glob=':(glob)**/agent-friendliness-report-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z.md'
+# The temp file publish_report leaves if it's killed mid-write. Same content.
+report_temp_glob=':(glob)**/.agent-friendliness-report.??????'
 state_fields='sandbox scored_repo commit base_commit save_dir previous_run owner_pid started settled'
 
 die() { echo "sandbox.sh: $*" >&2; exit 1; }
@@ -435,9 +437,9 @@ cmd_settle() {
   # A committed report lists which seeded bugs survived, so agents in this run
   # shouldn't find it. Git history can still show it, which the prompts cover.
   local reports
-  reports=$(sandbox_git ls-files -- "$report_glob")
+  reports=$(sandbox_git ls-files -- "$report_glob" "$report_temp_glob")
   if [ -n "$reports" ]; then
-    sandbox_git rm --quiet -f -- "$report_glob"
+    sandbox_git rm --quiet -f --ignore-unmatch -- "$report_glob" "$report_temp_glob"
     echo "earlier_reports_removed_from_clone=$(printf '%s\n' "$reports" | wc -l | tr -d ' ')"
   fi
   sandbox_git add -A
