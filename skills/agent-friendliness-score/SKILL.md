@@ -87,8 +87,13 @@ If it lists an `active_run`, it shows when that run started and whether its stat
 file was used recently. That can't prove activity either way, and the run may be
 live in another session. Ask the user before running `sandbox finish`, which would
 remove its clone. If it lists a `leftover_clone`, an earlier run crashed, so offer
-to delete it. If `sandbox` reports a damaged state file, check no other session is
-using it, delete the clone preflight lists, then remove the state file it names.
+to delete it.
+
+If `sandbox` reports a damaged state file, check no other session is using it, and
+read preflight's output. Delete only a `leftover_clone` folder, named
+`afs-sandbox.*` and holding `.afs-sandbox`. Never delete a path just because the
+state file records it. Then remove the state file it names. If no `leftover_clone`
+is listed, remove the state file only and leave any folder alone.
 
 Find the stack, CI's test, lint and typecheck commands, and how the repo documents
 its setup. Note whether the working tree has uncommitted changes, because only the

@@ -27,7 +27,8 @@ state_fields='sandbox scored_repo commit base_commit save_dir previous_run owner
 die() { echo "sandbox.sh: $*" >&2; exit 1; }
 damaged() {
   die "$*
-If this state file is damaged, check no other session is using it, delete the clone preflight lists, then remove $state_file"
+If this state file is damaged, check no other session is using it, then run preflight. Delete only a leftover_clone folder, named afs-sandbox.* and holding .afs-sandbox. Never delete a path just because the state file records it. Then remove $state_file
+If no leftover_clone is listed, remove the state file only and leave any folder alone."
 }
 hash8() { git hash-object --stdin | cut -c1-8; }
 slug() { printf '%s' "$1" | tr 'A-Z' 'a-z' | sed -E 's/[^a-z0-9._]+/-/g; s/^-+//; s/-+$//'; }
@@ -97,8 +98,8 @@ write_state() {
 
 orphans() {
   local dir state known physical
-  for dir in "$tmp_root"/afs-sandbox.*; do
-    [ -d "$dir" ] || continue
+  for dir in "$tmp_root"/afs-sandbox.??????; do
+    [ -d "$dir" ] && [ ! -L "$dir" ] && [ -f "$dir/.afs-sandbox" ] || continue
     physical=$(cd "$dir" && pwd -P)
     known=no
     for state in "$base"/.active/*.env; do
@@ -117,25 +118,32 @@ load_state() {
   read_state "$state_file"
 }
 
-# Checks the recorded path has the shape setup creates. The folder itself is
-# only checked when it exists, because finish may run after it was removed.
-check_clone_path() {
+# Checks the recorded path has the shape setup creates, setting clone_problem and
+# returning 1 if it doesn't. The folder itself is only checked when it exists,
+# because finish may run after it was removed.
+clone_path_ok() {
+  clone_problem=""
+  parent=""
   case "$sandbox" in
     /*/repo) ;;
-    *) damaged "the recorded clone path, '$sandbox', isn't one setup creates. Refusing." ;;
+    *) clone_problem="the recorded clone path, '$sandbox', isn't one setup creates."; return 1 ;;
   esac
   case "$sandbox/" in
-    */../*|*/./*|*//*) damaged "the recorded clone path, '$sandbox', isn't normalised. Refusing." ;;
+    */../*|*/./*|*//*) clone_problem="the recorded clone path, '$sandbox', isn't normalised."; return 1 ;;
   esac
   parent=${sandbox%/repo}
   case "${parent##*/}" in
     afs-sandbox.??????) ;;
-    *) damaged "the recorded clone path, '$sandbox', isn't one setup creates. Refusing." ;;
+    *) clone_problem="the recorded clone path, '$sandbox', isn't one setup creates."; return 1 ;;
   esac
   if [ -e "$parent" ]; then
-    [ "$(cd "$parent" && pwd -P)" = "$parent" ] || damaged "$parent isn't a real path. Refusing."
-    [ -f "$parent/.afs-sandbox" ] || damaged "$parent has no marker from setup. Refusing."
+    [ "$(cd "$parent" && pwd -P)" = "$parent" ] || { clone_problem="$parent isn't a real path."; return 1; }
+    [ -f "$parent/.afs-sandbox" ] || { clone_problem="$parent has no marker from setup."; return 1; }
   fi
+}
+
+check_clone_path() {
+  clone_path_ok || damaged "$clone_problem Refusing."
 }
 
 guard() {
@@ -229,7 +237,14 @@ cmd_preflight() {
   state_file="$base/.active/$(repo_id).env"
   if [ -f "$state_file" ]; then
     read_state "$state_file"
-    state_summary="clone=$sandbox started=$started owner_pid=$owner_pid"
+    # Only repeat a path this script would act on. A damaged state file could
+    # record any folder, and this output guides what gets deleted by hand.
+    if clone_path_ok && [ -f "$parent/.afs-sandbox" ]; then
+      state_summary="clone=$sandbox"
+    else
+      state_summary="clone=unverified"
+    fi
+    state_summary="$state_summary started=$started owner_pid=$owner_pid"
     if [ -n "$(find "$state_file" -mmin -10 2>/dev/null)" ]; then state_summary="$state_summary used_in_last_10_minutes=yes"
     else state_summary="$state_summary used_in_last_10_minutes=no"; fi
     echo "active_run=$state_file $state_summary"
