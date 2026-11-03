@@ -4,6 +4,7 @@ Grant Petersen-Speelman's preferred minimum set of agent skills, for Claude Code
 
 ## Skills
 
+- [`agent-friendliness-score`](skills/agent-friendliness-score/SKILL.md) – work in progress. Scores a repo out of 100 on whether it catches a plausible but wrong agent change, by planting bugs in a throwaway clone and measuring the results, then names the top three fixes. Run it with `/agent-friendliness-score` (Claude Code) or `$agent-friendliness-score` (Codex); neither will invoke it on its own.
 - [`auto-alignment-before-action`](skills/auto-alignment-before-action/SKILL.md) – before acting on a request that changes state, checks the agent and you agree on the goal.
 - [`get-aligned`](skills/get-aligned/SKILL.md) – interviews you until you both agree on the goal and outcome.
 - [`setup-devcontainer`](skills/setup-devcontainer/SKILL.md) – adds this repo's sandboxed Claude Code dev container to another repo, tailored to its stack. Run it with `/setup-devcontainer` (Claude Code) or `$setup-devcontainer` (Codex); neither will invoke it on its own.
