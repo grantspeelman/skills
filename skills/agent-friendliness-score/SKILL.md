@@ -29,20 +29,31 @@ Read these before scoring. They are part of this procedure:
 - [references/scoring.md](references/scoring.md): what each score means, and
   the verdicts.
 
-`scripts/sandbox.sh`, beside this file, manages the throwaway clone. Run it with
-`bash`, from inside the scored repo, for every action on the clone. It keeps its
-paths in a state file and refuses to act unless the clone is the path it recorded
-and is its own git toplevel. Call it `sandbox` below.
+`scripts/sandbox.sh`, beside this file, manages the throwaway clone. Use it for
+every action on the clone, by absolute path, from inside the scored repo:
+
+```bash
+bash /absolute/path/to/agent-friendliness-score/scripts/sandbox.sh restore
+```
+
+`bash scripts/sandbox.sh` would fail, or run the scored repo's own script. It's
+called `sandbox` below. It keeps its paths in a state file. Before changing the
+clone it checks that the recorded path has the shape setup creates, holds setup's
+marker file, and is its own git toplevel with no remote. These checks catch
+mistakes and a damaged state file, nothing stronger.
 
 | Command | What it does |
 |---------|--------------|
 | `sandbox preflight [url...]` | Tests write and network access, and lists credential variable names. |
 | `sandbox setup [scope]` | Creates the clone and save folder, and prints their paths. |
 | `sandbox paths` | Prints the paths again. |
-| `sandbox run -- <command>` | Runs a command in the clone, with credential variables unset. |
+| `sandbox run -- <command>` | Runs one command in the clone, with credential variables unset. |
+| `sandbox run -- bash -c 'npm ci && npm test'` | Runs several commands in the clone. **Shell operators outside the quotes, such as `&&`, run the next command in the scored repo, with credentials.** |
+| `sandbox run --keep NAME -- <command>` | Keeps one credential variable, for private dependency installs only. |
+| `sandbox settle` | Commits what install left behind, inside the clone, and restores to that commit from then on. |
 | `sandbox apply <patch>` | Applies a patch to the clone. |
 | `sandbox capture <path>` | Saves the clone's changes as a patch in the save folder, then restores. |
-| `sandbox restore` | Runs `git reset --hard HEAD` and `git clean -fd` in the clone, with hooks off. |
+| `sandbox restore` | Runs `git reset --hard HEAD` and `git clean -ffd` in the clone, with hooks off. |
 | `sandbox finish [--complete]` | Removes the clone, checks it's gone, and compares the scored repo with its state at setup. |
 
 ## Rules for the whole run
@@ -53,9 +64,11 @@ and is its own git toplevel. Call it `sandbox` below.
 - From CI, run only test, lint and typecheck steps. Never run release, deploy,
   publish, terraform or upload steps, even if a test step depends on them.
 - Never copy `.env` files, credentials or other secret files into the clone or a
-  report. `sandbox run` unsets credential-like variables. If tests need one, mark
-  the affected checks "not measured" unless the user gives a value that's safe
-  for testing. Pass it with `sandbox run -- env NAME=value <command>`.
+  report. `sandbox run` unsets variables whose names look like credentials. That
+  goes by name, so it can miss some, and tests can still read files in the home
+  directory. If tests need a credential, mark the affected checks "not measured"
+  unless the user gives a value that's safe for testing. Pass that with
+  `sandbox run -- env NAME=value <command>`.
 - If tests appear to reach production or shared services, stop and ask before
   running anything. Do the same if a run does something the plan didn't cover.
 - Never guess a result. A check that could not run is "not measured".
@@ -70,8 +83,10 @@ Read-only. Run `sandbox preflight`, adding the URL of any package registry this
 stack needs. It exits 3 if the repo has no commits. Stop there and say why. Exit 1
 means the run can't save its work, as described under Blocked access below.
 
-If it lists a `leftover_clone` or `active_run`, an earlier run crashed. Tell the
-user. Run `sandbox finish` for an `active_run`, and offer to delete leftover clones.
+If it lists an `active_run`, it shows when that run started and whether it looks
+in use. It may be live in another session, so ask the user before running
+`sandbox finish`, which would remove its clone. If it lists a `leftover_clone`, an
+earlier run crashed, so offer to delete it.
 
 Find the stack, CI's test, lint and typecheck commands, and how the repo documents
 its setup. Note whether the working tree has uncommitted changes, because only the
@@ -98,7 +113,10 @@ Commands:     bin/test, bin/lint, from CI. Skipped: deploy, publish-gem.
 Install:      bundle install in a throwaway clone (runs install scripts)
 Services:     Postgres from docker-compose.yml. No external URLs found.
 Local data:   tests write to the local database payments_test
-Credentials:  unset for test runs: AWS_SECRET_ACCESS_KEY, GH_TOKEN
+Credentials:  unset by name for test runs: AWS_SECRET_ACCESS_KEY, GH_TOKEN
+              kept for install only: none
+              tests can read these: ~/.aws, ~/.netrc
+              This goes by name and path, so it can miss some.
 Seeded:       10 bugs, plus 5 planted convention violations
 Agents:       3 fresh agents, one for the bugs and two for the docs check
 Other:        npx jscpd for duplication; read-only gh calls for CI history
@@ -125,8 +143,12 @@ Run `sandbox setup`, passing the package path as the scope if there is one. It
 prints the `sandbox` clone path, the commit, the `save_dir` and the `previous_run`.
 Run `sandbox paths` if you need them again.
 
-Install dependencies with `sandbox run`, the way the repo documents. If install
-fails, follow "When the baseline fails" in
+Install dependencies with `sandbox run`, the way the repo documents. If a private
+dependency needs a credential, the plan can list `sandbox run --keep NAME`, for the
+install only. Then run `sandbox settle`, even if install changed nothing or failed.
+`apply` and `capture` refuse to run until you have.
+
+If install fails, follow "When the baseline fails" in
 [references/checks.md](references/checks.md). Setup warns about submodules, Git
 LFS and shallow history. A check that fails only because the clone has no
 `origin`, such as a script using `origin/main`, is "not measured".
@@ -137,15 +159,16 @@ Run these in order, as [references/checks.md](references/checks.md) describes:
 
 1. Have a fresh agent write the seeded bugs.
 2. Run the baseline.
-3. Run the seeded bugs.
-4. Run the planted violations.
-5. Run the two fresh-agent checks.
-6. Run the consistency counts.
-7. Read CI and review history with `gh`, if available.
+3. Time one test file and the relevant tests.
+4. Run the seeded bugs.
+5. Run the planted violations.
+6. Run the two fresh-agent checks.
+7. Run the consistency counts.
+8. Read CI and review history with `gh`, if available.
 
 Run `sandbox restore` between changes to the clone. Don't use bare git commands
-to restore. If there are no tests, carry on. That's a measured result, 0 out of 20
-for Verification.
+to restore. If there are no tests, skip steps 1 to 4 and carry on with the rest.
+That's a measured result, 0 out of 20 for Verification.
 
 ## 5. Read the static evidence
 
@@ -162,8 +185,10 @@ Apply [references/scoring.md](references/scoring.md). Label every piece of evide
 Rank by points gained, and put Verification first on a tie. Each fix must name the
 metric it moves, the current and target values, and roughly how many points it's
 worth. Make fixes about this repo and about classes of mistake. "Add tests for
-these ten patches" only games the rerun, so don't suggest it. Don't apply any fix.
-This skill only reports.
+these ten patches" only games the rerun, so don't suggest it. A gap in this run's
+measurement isn't a fix either, so "install jscpd" or "move to GitHub Actions"
+can't rank. List those gaps as ceilings in the evidence. Don't apply any fix. This
+skill only reports.
 
 ## 8. Report, save and clean up
 
@@ -179,7 +204,7 @@ This skill is a work in progress.
 |----------------|-------|-----------------------------------------------|
 | Verification   | 15/20 | measured: 7 of 10 seeded bugs caught          |
 | Feedback speed | 15/20 | measured: relevant tests in 3m 40s            |
-| Context        | 10/20 | measured: 4 of 6 answers correct              |
+| Context        | 10/20 (ceiling: rules match not measured) | measured: 4 of 6 answers correct |
 | Consistency    | 15/20 | measured, low confidence: 4.1% duplication    |
 | Guardrails     | 15/20 | measured: 4 of 5 planted violations caught    |
 

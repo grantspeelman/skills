@@ -1,8 +1,8 @@
 # Measured checks
 
-Run these in order. `sandbox` means `bash scripts/sandbox.sh`, as in
-[SKILL.md](../SKILL.md), run from the scored repo. Paths like `seeded/` are inside
-`save_dir`. Save raw numbers for `result.json`.
+Run these in order. `sandbox` means `bash <skill folder>/scripts/sandbox.sh`, with
+the absolute path, as in [SKILL.md](../SKILL.md), run from the scored repo. Paths
+like `seeded/` are inside `save_dir`. Save raw numbers for `result.json`.
 
 "Commands" below means CI's test, lint and typecheck steps, or the documented
 equivalents if there's no CI. Save them in `result.json`, and on a rerun use the
@@ -33,15 +33,16 @@ A fresh subagent writes the bugs, without seeing any tests, so its choices don't
 fit the suite. First list:
 
 - **Test paths**, from
-  `git -C <sandbox> ls-files | grep -E '(^|/)(tests?|specs?|__tests__|e2e|features)/|[._]test\.|[._]spec\.|Test\.'`,
+  `sandbox run -- git ls-files | grep -E '(^|/)(tests?|specs?|__tests__|e2e|features)/|(^|/)test_|conftest\.py|[._]test\.|[._]spec\.|Tests?\.|\.Tests?/|\.bats$'`,
   plus anything else the repo uses.
 - **Hotspots**, the production files most changed in the last 6 months, from
   `git log --since='6 months ago' --name-only --format= | sort | uniq -c | sort -rn`,
   without the test paths. If history is shallow, use the largest production files.
 
 On a rerun, read only the earlier patches at this stage, not the earlier report.
-Copy at most 7 that pass `git -C <sandbox> apply --check`, keeping the highest
-numbered, then ask for enough new bugs to make 10. That's always at least 3 new.
+Starting from the highest numbered, test patches with `sandbox apply` and
+`sandbox restore`, and copy the first 7 that apply. Then ask for enough new bugs
+to make 10. That's always at least 3 new.
 Tests written against old patches would otherwise inflate the score.
 
 Give the subagent this prompt, with no other findings from this run:
@@ -70,8 +71,8 @@ be a mistake a capable agent could plausibly make. It must change behaviour in a
 way this repository's users could notice. It must compile. Leave test files alone,
 and don't leave a comment or name that gives it away.
 
-For each bug, edit the file in <sandbox>, then run this from <scored repo>:
-  bash <script> capture seeded/<NN>-<risk-category>.patch
+For each bug, edit the file in <sandbox>, then run:
+  cd <scored repo> && <AFS_HOME=folder, if this run uses one> bash <absolute path to sandbox.sh> capture seeded/<NN>-<risk-category>.patch
 Number from <next number>. That saves the patch and restores the code. Don't run
 any tests. Finish with one line per bug: its number, what is wrong, who notices.
 ```
@@ -87,8 +88,8 @@ had read any tests by then. Do the same if the subagent read a test.
 
 ### Running them
 
-**Baseline.** Run the commands twice on the clean clone with `sandbox run`. Record
-failures from each run. A test that fails in only one is a local flake. Tests that
+**Baseline.** Run the commands twice on the clean clone with `sandbox run`, using
+`bash -c` to run more than one. Record failures from each run. A test that fails in only one is a local flake. Tests that
 fail in either can't count as catching a bug.
 
 **Each bug.** Run `sandbox apply seeded/<patch>`, then the commands, then
@@ -119,6 +120,8 @@ Fewer than 5 valid bugs that ran means seeded bugs are "not measured".
   failure. Mark seeded bugs "not measured".
 - **The docs are right and this machine lacks it,** such as a toolchain or a secret
   you can't copy: mark the affected checks "not measured", and say what was missing.
+  The same goes for a hook installer refusing because this machine sets a global
+  `core.hooksPath`.
 
 ## Timings (Feedback speed)
 
@@ -137,8 +140,8 @@ gh run list --workflow <main workflow> --branch <default branch> --limit 50 \
 ```
 
 CI time is the median duration of successful runs. Treat the share of runs with
-`attempt` above 1 as the flaky rate. Without `gh`, or on another CI system, mark
-both "not measured".
+`attempt` above 1 as the flaky rate. Without `gh`, or on another CI system, both
+are optional and left out, as [scoring.md](scoring.md) explains.
 
 ## Planted violations (Guardrails)
 
@@ -225,4 +228,5 @@ gh api "repos/{owner}/{repo}/pulls/comments?per_page=100&sort=created&direction=
 ```
 
 Find conventions corrected at least twice, then check whether a lint rule or
-structural test now enforces each one. Paraphrase.
+structural test now enforces each one. Paraphrase. If review history can't be read,
+this item is optional and left out, as [scoring.md](scoring.md) explains.

@@ -25,7 +25,15 @@ Two kinds of missing requirement are treated differently:
 - **N/A:** it can't apply to this repo, such as performance budgets on a small CLI.
   Drop it from the level. The category stays out of 20.
 - **Not measured:** it applies, but the check couldn't run. It's never N/A, and it
-  blocks any level that names it. List it in the report.
+  blocks any level that names it. Show what it blocks as a ceiling, such as
+  `15/20 (ceiling: rules match not measured)`. A ceiling is a gap in this run, so it
+  never counts as a top fix.
+
+**Optional items.** Flaky rate, CI time and review history live on a hosting service,
+so they say more about access or the CI provider than about the repo. When that
+history can't be reached, leave them out and don't show a ceiling. When it can, they
+count like any other requirement. A repo on another CI system can still reach
+level 20.
 
 ## Verification
 
@@ -63,7 +71,7 @@ the tests relevant to a typical change.
 | 5 | A test command exists but is undocumented. | Following the docs fails, or relevant tests take 30 minutes or more. |
 | 10 | One documented command proves a change works, and running a single test file is documented. | The documented command works, and relevant tests take under 30 minutes. |
 | 15 | | The documented command works on a clean checkout, relevant tests take under 5 minutes, and one test file runs in under 60 seconds. |
-| 20 | | Relevant tests take under 60 seconds, one test file runs in under 15 seconds, no local flakes, flaky rate at most 2%, CI under 15 minutes, and an agent can read logs and errors from the repo's documented tools. |
+| 20 | | Relevant tests take under 60 seconds, one test file runs in under 15 seconds, no local flakes, flaky rate at most 2% and CI under 15 minutes (both optional), and an agent can read logs and errors from the repo's documented tools. |
 
 ## Context
 
@@ -96,6 +104,9 @@ or more approaches and no preferred one named in the docs.
 | 15 | | Duplication under 5%, at most one competing concern, and at most 3 non-generated files over about 1,000 lines. |
 | 20 | | Duplication under 3%, no competing concerns, no file over about 1,000 lines on both hotspot lists, and CI enforces a size or complexity limit. |
 
+Without a duplication tool, this category stops at 10. Show it as a ceiling,
+`10/20 (ceiling: duplication not measured)`.
+
 ## Guardrails
 
 Do mechanical checks enforce the conventions? "Catch rate" is the share of planted
@@ -107,10 +118,7 @@ violations caught.
 | 5 | Tools are configured, but CI doesn't run them. | Catch rate above 0% and below 40%. |
 | 10 | CI runs a linter and formatter, plus a security scanner where the stack has one. | Catch rate at least 40%. |
 | 15 | | Catch rate at least 60%, and CI runs a security scanner where the stack has one. |
-| 20 | | Catch rate at least 85%, plus CI-enforced module boundary checks and performance budgets on key paths, each where it applies. If review history is readable, every convention corrected twice also has a rule or structural test. |
-
-"Corrected twice" is the one optional item: unreadable review history doesn't block
-level 20.
+| 20 | | Catch rate at least 85%, plus CI-enforced module boundary checks and performance budgets on key paths, each where it applies, and a rule or structural test for every convention corrected twice (optional). |
 
 ## Score and verdict
 
@@ -122,12 +130,14 @@ The **score** is the measured categories' points as a percentage of their availa
 points, rounded down. With all five measured, that's the total out of 100. Work out
 the headline in this order, and stop at the first that applies:
 
-1. **Not proven.** If Verification isn't measured, or fewer than 60 points are
-   measured, the verdict is "Not proven: the repo's ability to catch a wrong change
-   was not measured". Show the points, such as `45/60 measured`, with no band.
+1. **Not proven.** Show the points, such as `30/40 measured`, with no band.
+   - If Verification isn't measured, the verdict is "Not proven: the repo's ability
+     to catch a wrong change was not measured".
+   - If Verification is measured but fewer than 3 categories are, the verdict is
+     "Not proven: too few categories were measured for a verdict".
 2. **Verification cap.** Verification at 0 caps the score at 39. Verification at 5
    caps it at 64. Show the uncapped figure too, such as
-   `64/100 (78 before the Verification cap)`.
+   `64/100 (80 before the Verification cap)`.
 3. **Band.** Read the verdict from the score, after any cap.
 
 | Score | Verdict |
