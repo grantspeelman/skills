@@ -164,6 +164,43 @@ guard() {
   touch "$state_file"
 }
 
+# Checks a report folder chosen by the user, setting report_folder to its absolute
+# path, or report_problem and returning 1. It may not exist yet. Anything that
+# does exist is resolved, so a symlink can't lead out of the scored repo.
+report_folder_ok() {
+  local path="$1" root="$2" dir physical
+  report_folder=""
+  report_problem=""
+  case "$path" in
+    "") report_problem="no folder given"; return 1 ;;
+    *"
+"*) report_problem="the path holds a line break"; return 1 ;;
+    .) path=$root ;;
+    ./*) path=${path#./} ;;
+  esac
+  case "/$path/" in
+    */../*|*/./*) report_problem="the path can't contain . or .. : $path"; return 1 ;;
+  esac
+  case "$path" in
+    /*) report_folder=$path ;;
+    *) report_folder="$root/$path" ;;
+  esac
+  while [ "$report_folder" != "/" ] && [ "${report_folder%/}" != "$report_folder" ]; do
+    report_folder=${report_folder%/}
+  done
+  dir=$report_folder
+  while [ ! -e "$dir" ] && [ ! -L "$dir" ]; do dir=$(dirname "$dir"); done
+  if [ ! -d "$dir" ]; then
+    report_problem="$dir isn't a folder"; return 1
+  fi
+  physical=$(cd "$dir" && pwd -P)
+  case "$physical${report_folder#"$dir"}/" in
+    "$root"/.git/*) report_problem="$path is inside .git"; return 1 ;;
+    "$root"/*) ;;
+    *) report_problem="$path is outside the scored repo, $root, or a symlink leads out of it"; return 1 ;;
+  esac
+}
+
 need_settled() {
   [ "$settled" = yes ] && return 0
   die "run sandbox settle first. It commits everything in the clone, as install output. If you've edited files, save the edit elsewhere first, then run sandbox restore, sandbox settle, and redo the edit."
@@ -177,8 +214,10 @@ in_save_dir() {
   esac
 }
 
-# Prints the problem and returns 1 if the save folder can't be used. Reports go
-# only outside the scored repo, so this runs before anything is created there.
+# Prints the problem and returns 1 if the save folder can't be used. The save
+# folder stays outside the scored repo, because the clone's state and patches live
+# there, so this runs before anything is created. The one file written to the
+# checkout is the report copy from finish --report-to.
 save_folder_problem() {
   local root="$1" dir physical probe
   case "$base" in
@@ -302,6 +341,32 @@ cmd_setup() {
   orphans
 }
 
+# Looks for docs/ then doc/ at the repo root, or the root of a scoped package.
+cmd_find_report_folder() {
+  local scope="${1:-}" root start name found=none
+  root=$(scored_root)
+  start=$root
+  if [ -n "$scope" ]; then
+    report_folder_ok "$scope" "$root" || die "bad scope: $report_problem"
+    start=$report_folder
+  fi
+  for name in docs doc; do
+    [ -d "$start/$name" ] || continue
+    if report_folder_ok "$start/$name" "$root"; then
+      found=${report_folder#"$root"/}
+      break
+    fi
+    echo "report_folder_skipped=$name ($report_problem)"
+  done
+  echo "report_folder=$found"
+}
+
+cmd_check_report_folder() {
+  [ "$#" = 1 ] || die "usage: check-report-folder <folder>"
+  report_folder_ok "$1" "$(scored_root)" || die "can't save the report there: $report_problem"
+  echo "report_folder=$report_folder"
+}
+
 cmd_paths() {
   [ -n "${sandbox:-}" ] || load_state
   echo "sandbox=$sandbox"
@@ -345,6 +410,14 @@ cmd_settle() {
   # A second settle would commit any applied patch into every later run.
   if [ "$settled" = yes ] && [ "${1:-}" != "--reinstall" ] && [ -n "$(sandbox_git status --porcelain)" ]; then
     die "already settled, and the clone has changes. Run sandbox restore to drop them. After a genuine second install, use sandbox settle --reinstall."
+  fi
+  # A committed report lists which seeded bugs survived, so agents in this run
+  # shouldn't find it. Git history can still show it, which the prompts cover.
+  local reports
+  reports=$(sandbox_git ls-files -- ':(glob)**/agent-friendliness-report-*')
+  if [ -n "$reports" ]; then
+    sandbox_git rm --quiet -f -- ':(glob)**/agent-friendliness-report-*'
+    echo "earlier_reports_removed_from_clone=$(printf '%s\n' "$reports" | wc -l | tr -d ' ')"
   fi
   sandbox_git add -A
   if ! sandbox_git diff --cached --quiet; then
@@ -401,13 +474,27 @@ cmd_restore() {
 }
 
 cmd_finish() {
-  local complete=no status=0
-  [ "${1:-}" = "--complete" ] && complete=yes
+  local complete=no status=0 report_to="" have_report_to=no target
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --complete) complete=yes; shift ;;
+      --report-to)
+        [ "$#" -ge 2 ] || die "usage: finish [--complete [--report-to <folder>]]"
+        report_to=$2; have_report_to=yes; shift 2 ;;
+      *) die "usage: finish [--complete [--report-to <folder>]]" ;;
+    esac
+  done
   load_state
   check_clone_path
   if [ "$complete" = yes ]; then
     [ -f "$save_dir/report.md" ] && [ -f "$save_dir/result.json" ] \
       || die "save report.md and result.json in $save_dir before finishing with --complete"
+  fi
+  # Refuse a bad report folder now, while the run can still be fixed.
+  if [ "$have_report_to" = yes ]; then
+    [ "$complete" = yes ] || die "--report-to needs --complete, because it copies the finished report"
+    [ "$(scored_root)" = "$scored_repo" ] || die "run this from the scored repo, $scored_repo"
+    report_folder_ok "$report_to" "$scored_repo" || die "can't save the report there: $report_problem"
   fi
   if [ -e "$parent" ]; then
     chmod -R u+w "$parent" 2>/dev/null || true
@@ -430,6 +517,20 @@ cmd_finish() {
   [ "$complete" = no ] || touch "$save_dir/complete"
   echo "clone_removed=$parent"
   echo "save_dir=$save_dir"
+  # This comes after the comparison above, so the copy doesn't count as a change.
+  # It's checked again because the run may have changed the folder. set -C refuses
+  # to replace an existing file or follow a symlink at the target.
+  if [ "$have_report_to" = yes ]; then
+    target="$report_folder/agent-friendliness-report-$(basename "$save_dir").md"
+    if report_folder_ok "$report_to" "$scored_repo" \
+      && ( umask 077; mkdir -p "$report_folder" && set -C && cat "$save_dir/report.md" > "$target" ) 2>/dev/null; then
+      echo "report_copy=$target"
+      echo "report_copy_note=untracked, and not staged or committed"
+    else
+      echo "report_copy=FAILED: couldn't write $target ${report_problem:+($report_problem) }. The report is still at $save_dir/report.md" >&2
+      status=5
+    fi
+  fi
   exit "$status"
 }
 
@@ -437,5 +538,7 @@ command="${1:-}"
 [ "$#" = 0 ] || shift
 case "$command" in
   preflight|setup|paths|run|settle|apply|capture|restore|finish) "cmd_$command" ${1+"$@"} ;;
-  *) die "usage: sandbox.sh preflight|setup [scope]|paths|run [--keep NAME] -- <command>|settle [--reinstall]|apply <patch>|capture <path>|restore|finish [--complete]" ;;
+  find-report-folder) cmd_find_report_folder ${1+"$@"} ;;
+  check-report-folder) cmd_check_report_folder ${1+"$@"} ;;
+  *) die "usage: sandbox.sh preflight|setup [scope]|paths|run [--keep NAME] -- <command>|settle [--reinstall]|apply <patch>|capture <path>|restore|find-report-folder [scope]|check-report-folder <folder>|finish [--complete [--report-to <folder>]]" ;;
 esac
