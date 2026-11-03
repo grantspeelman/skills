@@ -50,7 +50,7 @@ mistakes and a damaged state file, nothing stronger.
 | `sandbox run -- <command>` | Runs one command in the clone, with credential variables unset. |
 | `sandbox run -- bash -c 'npm ci && npm test'` | Runs several commands in the clone. **Shell operators outside the quotes, such as `&&`, run the next command in the scored repo, with credentials.** |
 | `sandbox run --keep NAME -- <command>` | Keeps one credential variable, for private dependency installs only. |
-| `sandbox settle` | Commits what install left behind, inside the clone, and restores to that commit from then on. |
+| `sandbox settle [--reinstall]` | Commits everything in the clone as install output, and restores to that commit from then on. Refuses changes once settled, unless `--reinstall` follows a genuine second install. |
 | `sandbox apply <patch>` | Applies a patch to the clone. |
 | `sandbox capture <path>` | Saves the clone's changes as a patch in the save folder, then restores. |
 | `sandbox restore` | Runs `git reset --hard HEAD` and `git clean -ffd` in the clone, with hooks off. |
@@ -83,10 +83,12 @@ Read-only. Run `sandbox preflight`, adding the URL of any package registry this
 stack needs. It exits 3 if the repo has no commits. Stop there and say why. Exit 1
 means the run can't save its work, as described under Blocked access below.
 
-If it lists an `active_run`, it shows when that run started and whether it looks
-in use. It may be live in another session, so ask the user before running
-`sandbox finish`, which would remove its clone. If it lists a `leftover_clone`, an
-earlier run crashed, so offer to delete it.
+If it lists an `active_run`, it shows when that run started and whether its state
+file was used recently. That can't prove activity either way, and the run may be
+live in another session. Ask the user before running `sandbox finish`, which would
+remove its clone. If it lists a `leftover_clone`, an earlier run crashed, so offer
+to delete it. If `sandbox` reports a damaged state file, check no other session is
+using it, delete the clone preflight lists, then remove the state file it names.
 
 Find the stack, CI's test, lint and typecheck commands, and how the repo documents
 its setup. Note whether the working tree has uncommitted changes, because only the
@@ -204,7 +206,7 @@ This skill is a work in progress.
 |----------------|-------|-----------------------------------------------|
 | Verification   | 15/20 | measured: 7 of 10 seeded bugs caught          |
 | Feedback speed | 15/20 | measured: relevant tests in 3m 40s            |
-| Context        | 10/20 (ceiling: rules match not measured) | measured: 4 of 6 answers correct |
+| Context        | 10/20 (ceiling: rules match not measured) | measured: 5 of 6 answers correct |
 | Consistency    | 15/20 | measured, low confidence: 4.1% duplication    |
 | Guardrails     | 15/20 | measured: 4 of 5 planted violations caught    |
 

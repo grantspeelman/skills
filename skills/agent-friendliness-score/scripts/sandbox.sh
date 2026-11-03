@@ -25,6 +25,10 @@ credential_names='TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|ASKPASS|API_?KEY|ACCES
 state_fields='sandbox scored_repo commit base_commit save_dir previous_run owner_pid started settled'
 
 die() { echo "sandbox.sh: $*" >&2; exit 1; }
+damaged() {
+  die "$*
+If this state file is damaged, check no other session is using it, delete the clone preflight lists, then remove $state_file"
+}
 hash8() { git hash-object --stdin | cut -c1-8; }
 slug() { printf '%s' "$1" | tr 'A-Z' 'a-z' | sed -E 's/[^a-z0-9._]+/-/g; s/^-+//; s/-+$//'; }
 credentials() { compgen -e | grep -E "$credential_names" | sort || true; }
@@ -118,42 +122,43 @@ load_state() {
 check_clone_path() {
   case "$sandbox" in
     /*/repo) ;;
-    *) die "the recorded clone path, '$sandbox', isn't one setup creates. Refusing." ;;
+    *) damaged "the recorded clone path, '$sandbox', isn't one setup creates. Refusing." ;;
   esac
   case "$sandbox/" in
-    */../*|*/./*|*//*) die "the recorded clone path, '$sandbox', isn't normalised. Refusing." ;;
+    */../*|*/./*|*//*) damaged "the recorded clone path, '$sandbox', isn't normalised. Refusing." ;;
   esac
   parent=${sandbox%/repo}
   case "${parent##*/}" in
     afs-sandbox.??????) ;;
-    *) die "the recorded clone path, '$sandbox', isn't one setup creates. Refusing." ;;
+    *) damaged "the recorded clone path, '$sandbox', isn't one setup creates. Refusing." ;;
   esac
   if [ -e "$parent" ]; then
-    [ "$(cd "$parent" && pwd -P)" = "$parent" ] || die "$parent isn't a real path. Refusing."
-    [ -f "$parent/.afs-sandbox" ] || die "$parent has no marker from setup. Refusing."
+    [ "$(cd "$parent" && pwd -P)" = "$parent" ] || damaged "$parent isn't a real path. Refusing."
+    [ -f "$parent/.afs-sandbox" ] || damaged "$parent has no marker from setup. Refusing."
   fi
 }
 
 guard() {
   load_state
-  [ -n "$scored_repo" ] || die "the state file has no scored repo: $state_file"
-  case "$commit$base_commit" in *[!0-9a-f]*|"") die "the state file has a bad commit: $state_file" ;; esac
+  [ -n "$scored_repo" ] || damaged "the state file has no scored repo."
+  case "$commit$base_commit" in *[!0-9a-f]*|"") damaged "the state file has a bad commit." ;; esac
   case "$save_dir/" in
-    */../*) die "the recorded save folder isn't normalised. Refusing." ;;
+    */../*) damaged "the recorded save folder isn't normalised. Refusing." ;;
     "$base"/*) ;;
-    *) die "the recorded save folder is outside $base. Refusing." ;;
+    *) damaged "the recorded save folder is outside $base. Refusing." ;;
   esac
   [ "$(scored_root)" = "$scored_repo" ] || die "run this from the scored repo, $scored_repo"
   check_clone_path
-  [ "$sandbox" != "$scored_repo" ] || die "the clone path is the scored repo. Refusing."
+  [ "$sandbox" != "$scored_repo" ] || damaged "the clone path is the scored repo. Refusing."
   [ "$(git -C "$sandbox" rev-parse --show-toplevel 2>/dev/null)" = "$sandbox" ] \
-    || die "$sandbox is not its own git toplevel. Refusing."
-  [ -z "$(git -C "$sandbox" remote)" ] || die "$sandbox has a remote, so it isn't the throwaway clone. Refusing."
+    || damaged "$sandbox is not its own git toplevel. Refusing."
+  [ -z "$(git -C "$sandbox" remote)" ] || damaged "$sandbox has a remote, so it isn't the throwaway clone. Refusing."
   touch "$state_file"
 }
 
 need_settled() {
-  [ "$settled" = yes ] || die "run sandbox settle after installing dependencies, then try again"
+  [ "$settled" = yes ] && return 0
+  die "run sandbox settle first. It commits everything in the clone, as install output. If you've edited files, save the edit elsewhere first, then run sandbox restore, sandbox settle, and redo the edit."
 }
 
 in_save_dir() {
@@ -224,9 +229,7 @@ cmd_preflight() {
   state_file="$base/.active/$(repo_id).env"
   if [ -f "$state_file" ]; then
     read_state "$state_file"
-    state_summary="started=$started owner_pid=$owner_pid"
-    if kill -0 "$owner_pid" 2>/dev/null; then state_summary="$state_summary owner_running=yes"
-    else state_summary="$state_summary owner_running=no"; fi
+    state_summary="clone=$sandbox started=$started owner_pid=$owner_pid"
     if [ -n "$(find "$state_file" -mmin -10 2>/dev/null)" ]; then state_summary="$state_summary used_in_last_10_minutes=yes"
     else state_summary="$state_summary used_in_last_10_minutes=no"; fi
     echo "active_run=$state_file $state_summary"
@@ -320,7 +323,12 @@ cmd_run() {
 # commit from now on. Without this, a changed lockfile would land in the first
 # patch and the first restore would delete it.
 cmd_settle() {
+  [ "$#" = 0 ] || [ "${1:-}" = "--reinstall" ] || die "usage: settle [--reinstall]"
   guard
+  # A second settle would commit any applied patch into every later run.
+  if [ "$settled" = yes ] && [ "${1:-}" != "--reinstall" ] && [ -n "$(sandbox_git status --porcelain)" ]; then
+    die "already settled, and the clone has changes. Run sandbox restore to drop them. After a genuine second install, use sandbox settle --reinstall."
+  fi
   sandbox_git add -A
   if ! sandbox_git diff --cached --quiet; then
     sandbox_git diff --cached --name-only > "$save_dir/install-changes.txt"
@@ -341,8 +349,8 @@ cmd_apply() {
   local patch
   patch=$(in_save_dir "$1")
   [ -f "$patch" ] || die "no such patch: $patch"
-  sandbox_git apply --check "$patch"
-  sandbox_git apply "$patch"
+  sandbox_git apply --whitespace=nowarn --check "$patch"
+  sandbox_git apply --whitespace=nowarn "$patch"
 }
 
 cmd_capture() {
@@ -354,12 +362,12 @@ cmd_capture() {
   patch=$(in_save_dir "$1")
   ( umask 077
     mkdir -p "$(dirname "$patch")"
-    sandbox_git add -AN .
-    sandbox_git diff --binary --no-ext-diff --no-textconv --no-color --no-relative \
+    sandbox_git add -A .
+    sandbox_git diff --cached -U3 --binary --no-ext-diff --no-textconv --no-color --no-relative \
       --src-prefix=a/ --dst-prefix=b/ > "$patch" )
   [ -s "$patch" ] || { rm -f "$patch"; die "the clone has no changes to capture"; }
   # The changes are still applied, so test that the patch reverses cleanly.
-  sandbox_git apply --check -R "$patch" \
+  sandbox_git apply --whitespace=nowarn --check -R "$patch" \
     || die "the saved patch doesn't match the clone's changes. The clone is unchanged: $patch"
   cmd_restore
 }
@@ -412,5 +420,5 @@ command="${1:-}"
 [ "$#" = 0 ] || shift
 case "$command" in
   preflight|setup|paths|run|settle|apply|capture|restore|finish) "cmd_$command" ${1+"$@"} ;;
-  *) die "usage: sandbox.sh preflight|setup [scope]|paths|run [--keep NAME] -- <command>|settle|apply <patch>|capture <path>|restore|finish [--complete]" ;;
+  *) die "usage: sandbox.sh preflight|setup [scope]|paths|run [--keep NAME] -- <command>|settle [--reinstall]|apply <patch>|capture <path>|restore|finish [--complete]" ;;
 esac
