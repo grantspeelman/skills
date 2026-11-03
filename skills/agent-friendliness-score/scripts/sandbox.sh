@@ -283,7 +283,9 @@ cmd_setup() {
   trap 'rm -rf "$parent"' EXIT
   : > "$parent/.afs-sandbox"
   sandbox="$parent/repo"
-  git -c core.hooksPath=/dev/null clone --quiet --local --no-checkout --template= -o origin -- "$root" "$sandbox"
+  # No --local: that makes a failed hard link fatal when the clone is on another
+  # mount. A plain clone of a path still hard links, and copies if it can't.
+  git -c core.hooksPath=/dev/null clone --quiet --no-checkout --template= -o origin -- "$root" "$sandbox"
   # A detached HEAD in a linked worktree isn't copied by clone, so fetch it.
   git -C "$sandbox" cat-file -e "$commit^{commit}" 2>/dev/null \
     || sandbox_git fetch --quiet "$root" "$commit"
