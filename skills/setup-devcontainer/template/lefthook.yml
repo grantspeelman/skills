@@ -1,4 +1,4 @@
-# Installed into .git/hooks by .devcontainer/postStartCommand.sh.
+# Run by the dev container's pre-commit hook (.devcontainer/git-hooks/pre-commit).
 pre-commit:
   commands:
     gitleaks:

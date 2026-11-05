@@ -1,11 +1,17 @@
 #!/bin/bash
-# Build, start and attach to the dev container from a plain terminal.
-#   --rebuild  git pull --ff-only, then rebuild the image from scratch (also how
-#              Claude Code gets upgraded); asks first if the pull changes
-#              .devcontainer/ to anything but the default branch's
-#   --docker   privileged mode with nested Docker; see compose.docker.yml first
-#   --maintain writable .devcontainer/, to work on the dev container itself
-#   -- CMD...  run CMD in the container instead of bash, e.g. -- claude --resume
+# Build, start and attach to the dev container from a plain terminal. By default
+# the container works in its own clone of this repo, in a volume, seeded once
+# from this checkout; nothing from the checkout is mounted.
+#   --rebuild          git pull --ff-only, then rebuild the image from scratch
+#                      (also how Claude Code gets upgraded); asks first if the
+#                      pull changes .devcontainer/ to anything but the default
+#                      branch's
+#   --docker           privileged mode with nested Docker; see compose.docker.yml
+#   --mount-workspace  mount this checkout read-write instead of using the clone;
+#                      the container can then write files this host runs
+#   --reset            discard the clone and seed it again from this checkout;
+#                      lists what isn't on GitHub and asks first
+#   -- CMD...          run CMD in the container instead of bash, e.g. -- claude --resume
 set -euo pipefail
 
 GREEN='\033[0;32m'
@@ -16,61 +22,102 @@ NC='\033[0m'
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 
+usage="Usage: $(basename "$0") [--rebuild] [--docker] [--mount-workspace | --reset] [-- CMD [ARG...]]"
 original_args=("$@")
 rebuild=false
 docker_mode=false
-maintain_mode=false
+mount_mode=false
+reset=false
 command=(bash)
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --rebuild) rebuild=true ;;
         --docker) docker_mode=true ;;
-        --maintain) maintain_mode=true ;;
+        --mount-workspace) mount_mode=true ;;
+        --reset) reset=true ;;
         --)
             shift
             if [ "$#" -gt 0 ]; then command=("$@"); fi
             break
             ;;
-        *) echo "Usage: $(basename "$0") [--rebuild] [--docker] [--maintain] [-- CMD [ARG...]]" >&2; exit 64 ;;
+        *) echo "$usage" >&2; exit 64 ;;
     esac
     shift
 done
+# The mounted checkout is the host's own; there's no clone to reset.
+if [ "$mount_mode" = true ] && [ "$reset" = true ]; then
+    echo -e "${RED}--reset discards the container's own clone, which --mount-workspace doesn't use.${NC}" >&2
+    echo "$usage" >&2
+    exit 64
+fi
 
 # One container per checkout: key the compose project to the checkout path, so
-# two checkouts never share (or recreate) each other's container. The name also
-# differs from the one VS Code generates, so the two never disturb each other.
+# two checkouts never share (or recreate) each other's container or clone. The
+# name also differs from the one VS Code generates, so the two never disturb
+# each other. smoke-test.sh sets SMOKE_COMPOSE_PROJECT to keep its run apart.
 checkout_slug="$(printf '%s' "$(basename "$PROJECT_ROOT")" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9_-' '-')"
 checkout_digest="$(printf '%s' "$PROJECT_ROOT" | cksum | cut -d ' ' -f 1)"
-COMPOSE_PROJECT="skills-${checkout_slug}-${checkout_digest}"
+COMPOSE_PROJECT="${SMOKE_COMPOSE_PROJECT:-skills-${checkout_slug}-${checkout_digest}}"
 SERVICE="app"
-# docker-compose.yml mounts .git/hooks and .git/config read-only, which needs a
-# real .git directory; in a worktree .git is a file pointing elsewhere.
-if [ ! -d "$PROJECT_ROOT/.git" ]; then
-    echo -e "${RED}$PROJECT_ROOT/.git is not a directory (a git worktree?). The dev container needs a regular clone.${NC}" >&2
-    exit 1
-fi
+# The same name compose.clone.yml gives the external volume.
+CLAUDE_VOLUME="${SMOKE_CLAUDE_VOLUME:-grantspeelman-skills-claude-config}"
+
+# ── .devcontainer/ runs on this host: vet it first ──────────────────────────
+# start.sh, the compose files and the Dockerfile run here, and anyone who can
+# push to a branch this checkout pulls (the container's token, for one) can
+# change them. Both checks below trust only the files on disk, this checkout's
+# .git and the remote. In the default mode the container can't touch any of
+# those. After a --mount-workspace or VS Code session it could have changed all
+# of them: the files, .git/config (the remote's URL, filters that `git add`
+# below runs) and .git/hooks (which `git pull` runs). Then these checks protect
+# nothing, and only your own review does.
+
+# The tree id of .devcontainer/ as it is on disk; nothing when it's missing.
+devcontainer_tree() {
+    local dir tree
+    # Nothing when it's gone or was swapped for a file or symlink.
+    if [ ! -d "$PROJECT_ROOT/.devcontainer" ] || [ -L "$PROJECT_ROOT/.devcontainer" ]; then
+        return 0
+    fi
+    dir="$(mktemp -d)"
+    # A throwaway index, so the real one (and its stat cache) plays no part.
+    tree="$(GIT_INDEX_FILE="$dir/index" git -C "$PROJECT_ROOT" add --force -- .devcontainer \
+        && GIT_INDEX_FILE="$dir/index" git -C "$PROJECT_ROOT" write-tree)" || { rm -rf "$dir"; return 1; }
+    rm -rf "$dir"
+    git -C "$PROJECT_ROOT" rev-parse --verify --quiet "$tree:.devcontainer" || true
+}
+# The tree id of .devcontainer/ at a commit; nothing when it has none.
+devcontainer_tree_at() {
+    git -C "$PROJECT_ROOT" rev-parse --verify --quiet "$1:.devcontainer" || true
+}
+# Shows how .devcontainer/ changes from tree $1 to tree $2 (either may be
+# empty, for none), then $3, and asks. Succeeds only on y; with no terminal to
+# ask on, it doesn't.
+confirm_devcontainer() {
+    local empty answer=""
+    empty="$(git -C "$PROJECT_ROOT" hash-object -t tree /dev/null)"
+    # --text and no drivers, so attributes can't hide a file; cat -v, so
+    # control characters and \r can't hide lines.
+    local diff_args=(--no-pager diff --text --no-textconv --no-ext-diff
+        --src-prefix=a/.devcontainer/ --dst-prefix=b/.devcontainer/ "${1:-$empty}" "${2:-$empty}")
+    git -C "$PROJECT_ROOT" "${diff_args[@]}" --stat | cat -v
+    git -C "$PROJECT_ROOT" "${diff_args[@]}" | cat -v
+    echo -e "${YELLOW}$3 This host runs that code next.${NC}"
+    if [ -t 0 ]; then
+        read -r -p "Run it? [y/N] " answer || true
+    fi
+    [ "$answer" = y ] || [ "$answer" = Y ]
+}
+# The remote this branch pulls from, read before anything can change it.
+branch="$(git -C "$PROJECT_ROOT" symbolic-ref --quiet --short HEAD || true)"
+remote="$(git -C "$PROJECT_ROOT" config --get "branch.$branch.remote" || echo origin)"
 
 # ── Update: --rebuild builds what's on the remote ───────────────────────────
 if [ "$rebuild" = true ] && [ -z "${START_SH_PULLED:-}" ]; then
     # This copy predates the pull, so it's the one that can vet what comes in.
-    # It trusts only the files on disk, which the container can't write, and the
-    # remote: HEAD, the index and the rest of .git the container can.
-    devcontainer_tree() {
-        local dir tree
-        # Nothing when the pull removed it or swapped it for a file or symlink.
-        if [ ! -d "$PROJECT_ROOT/.devcontainer" ] || [ -L "$PROJECT_ROOT/.devcontainer" ]; then
-            return 0
-        fi
-        dir="$(mktemp -d)"
-        # A throwaway index, so the real one (and its stat cache) plays no part.
-        tree="$(GIT_INDEX_FILE="$dir/index" git -C "$PROJECT_ROOT" add --force -- .devcontainer \
-            && GIT_INDEX_FILE="$dir/index" git -C "$PROJECT_ROOT" write-tree)" || { rm -rf "$dir"; return 1; }
-        rm -rf "$dir"
-        git -C "$PROJECT_ROOT" rev-parse --verify --quiet "$tree:.devcontainer" || true
-    }
     stop_rebuild() {
         echo -e "${RED}$1${NC}" >&2
-        if [ "$(git -C "$PROJECT_ROOT" rev-parse --verify --quiet "$old_head:.devcontainer" || true)" = "$before" ]; then
+        if [ "$(devcontainer_tree_at "$old_head")" = "$before" ]; then
             echo -e "${RED}The checkout is already fast-forwarded; to go back: git reset --hard $old_head${NC}" >&2
         else
             # Resetting to it would put those files on disk.
@@ -80,9 +127,6 @@ if [ "$rebuild" = true ] && [ -z "${START_SH_PULLED:-}" ]; then
     }
     old_head="$(git -C "$PROJECT_ROOT" rev-parse HEAD)"
     before="$(devcontainer_tree)"
-    # The remote git pull uses, read now: the container can write .git/HEAD.
-    branch="$(git -C "$PROJECT_ROOT" symbolic-ref --quiet --short HEAD || true)"
-    remote="$(git -C "$PROJECT_ROOT" config --get "branch.$branch.remote" || echo origin)"
     echo -e "${GREEN}Pulling the latest changes (fast-forward only)...${NC}"
     if ! git -C "$PROJECT_ROOT" pull --ff-only; then
         echo -e "${RED}git pull --ff-only failed: sort out the branch, then rerun.${NC}" >&2
@@ -92,9 +136,10 @@ if [ "$rebuild" = true ] && [ -z "${START_SH_PULLED:-}" ]; then
     if [ -z "$after" ] || [ "$(git -C "$PROJECT_ROOT" cat-file -t "$after")" != tree ]; then
         stop_rebuild "Stopped: the pull removed .devcontainer/ or made it something other than a directory."
     fi
-    # Anyone who can push to this branch (the container's token, for one) can
-    # change .devcontainer/, and this host runs it. The remote's default branch
-    # only changes through a PR; anything else needs your eyes.
+    # The remote's default branch only changes through a PR; anything else
+    # needs your eyes. When the pull changes nothing here, the check every
+    # start runs (below) still compares what's on disk with the default branch.
+    vetted=false
     if [ "$after" != "$before" ]; then
         # The remote names its default branch and that branch's tip: "ref:
         # refs/heads/<name>\tHEAD", then "<sha>\tHEAD".
@@ -105,56 +150,70 @@ if [ "$rebuild" = true ] && [ -z "${START_SH_PULLED:-}" ]; then
         # an old default-branch commit (from before a fix) doesn't pass either.
         if [ "$remote" = . ] || [ -z "$default_branch" ] || [ -z "$default_sha" ] \
             || ! git -C "$PROJECT_ROOT" fetch --quiet "$remote" "refs/heads/$default_branch" \
-            || [ "$(git -C "$PROJECT_ROOT" rev-parse --verify --quiet "$default_sha:.devcontainer" || true)" != "$after" ]; then
-            # --text and no drivers, so attributes can't hide a file; cat -v, so
-            # control characters and \r can't hide lines.
-            diff_args=(--no-pager diff --text --no-textconv --no-ext-diff
-                --src-prefix=a/.devcontainer/ --dst-prefix=b/.devcontainer/ "$before" "$after")
-            git -C "$PROJECT_ROOT" "${diff_args[@]}" --stat | cat -v
-            git -C "$PROJECT_ROOT" "${diff_args[@]}" | cat -v
-            echo -e "${YELLOW}The pull changes the .devcontainer/ that runs now (above) to something other than $remote/${default_branch:-<default branch>}. This host runs that code next.${NC}"
-            answer=""
-            if [ -t 0 ]; then
-                read -r -p "Run it? [y/N] " answer || true
-            fi
-            if [ "$answer" != y ] && [ "$answer" != Y ]; then
-                stop_rebuild "Stopped without running the new .devcontainer/."
-            fi
+            || [ "$(devcontainer_tree_at "$default_sha")" != "$after" ]; then
+            confirm_devcontainer "$before" "$after" \
+                "The pull changes the .devcontainer/ that runs now (above) to something other than $remote/${default_branch:-<default branch>}." \
+                || stop_rebuild "Stopped without running the new .devcontainer/."
         fi
+        vetted=true
     fi
-    # The pull may have changed this script; run the new copy.
-    START_SH_PULLED=1 exec "$SCRIPT_DIR/start.sh" "${original_args[@]}"
+    # The pull may have changed this script; run the new copy, and tell it
+    # whether .devcontainer/ is already vetted, so it doesn't ask twice.
+    START_SH_PULLED=1 START_SH_VETTED="$vetted" exec "$SCRIPT_DIR/start.sh" "${original_args[@]}"
 fi
 
-# ── Git identity: the container sees .git/config, not your ~/.gitconfig ─────
-identity_changed=false
-for key in user.name user.email; do
-    if [ -n "$(git -C "$PROJECT_ROOT" config --local --get "$key" || true)" ]; then
-        continue
+# ── Every start: .devcontainer/ as the default branch has it ────────────────
+# A branch the container pushed can change .devcontainer/, and checking it out
+# here puts that on disk. This compares it with the default branch as this
+# checkout last fetched it (no network). It catches changes to the compose
+# files, the Dockerfile and the rest of what start.sh runs, but not a changed
+# start.sh itself: this check runs inside that copy, which can simply leave it
+# out. So review a pushed branch's .devcontainer/ before you check it out or
+# pull it (git diff origin/HEAD <branch> -- .devcontainer). --rebuild doesn't
+# have the gap: the copy from before the pull does its checking.
+# With --mount-workspace the container can write this checkout's .git too, so
+# there's nothing trustworthy to compare with, and the check is skipped; see
+# the warning below.
+# A --rebuild that just vetted .devcontainer/ says so; only the copy it runs
+# after the pull takes its word.
+if [ "${START_SH_PULLED:-}" = 1 ] && [ "${START_SH_VETTED:-}" = true ]; then
+    :
+elif [ "$mount_mode" = false ]; then
+    # The branch's own remote, unless it's this repo (.) or has no URL.
+    check_remote="$remote"
+    if [ "$check_remote" = . ] || [ -z "$(git -C "$PROJECT_ROOT" config --get "remote.$check_remote.url" || true)" ]; then
+        check_remote=origin
     fi
-    if [ ! -t 0 ]; then
-        echo -e "${YELLOW}$key is not set in this repo's .git/config: commits inside the container will fail.${NC}"
-        continue
+    if [ -z "$(git -C "$PROJECT_ROOT" config --get "remote.$check_remote.url" || true)" ]; then
+        echo -e "${YELLOW}No remote to check .devcontainer/ against, so it wasn't checked.${NC}"
+    else
+        on_disk="$(devcontainer_tree)"
+        default_ref="$(git -C "$PROJECT_ROOT" symbolic-ref --quiet "refs/remotes/$check_remote/HEAD" || true)"
+        if [ -z "$default_ref" ]; then
+            echo -e "${YELLOW}No refs/remotes/$check_remote/HEAD to check .devcontainer/ against; git remote set-head $check_remote --auto sets it.${NC}"
+            confirm_devcontainer "" "$on_disk" "That's all of .devcontainer/ (above), unchecked." \
+                || { echo -e "${RED}Stopped without running .devcontainer/.${NC}" >&2; exit 1; }
+        elif [ "$(devcontainer_tree_at "$default_ref")" != "$on_disk" ]; then
+            confirm_devcontainer "$(devcontainer_tree_at "$default_ref")" "$on_disk" \
+                "The .devcontainer/ on disk differs from ${default_ref#refs/remotes/} (above), as this checkout last fetched it." \
+                || { echo -e "${RED}Stopped without running this .devcontainer/. Review it, or switch to the default branch.${NC}" >&2; exit 1; }
+        fi
     fi
-    default="$(git -C "$PROJECT_ROOT" config --global --get "$key" || true)"
-    read -r -p "Git $key for this repo${default:+ [$default]}: " value
-    value="${value:-$default}"
-    if [ -z "$value" ]; then
-        echo -e "${RED}$key is required for commits inside the container.${NC}" >&2
-        exit 1
-    fi
-    git -C "$PROJECT_ROOT" config --local "$key" "$value"
-    identity_changed=true
-done
+fi
 
 COMPOSE=(docker compose -p "$COMPOSE_PROJECT"
     -f "$SCRIPT_DIR/docker-compose.yml")
+if [ "$mount_mode" = true ]; then
+    COMPOSE+=(-f "$SCRIPT_DIR/compose.mount.yml")
+else
+    COMPOSE+=(-f "$SCRIPT_DIR/compose.clone.yml")
+fi
 if [ "$docker_mode" = true ]; then
     COMPOSE+=(-f "$SCRIPT_DIR/compose.docker.yml")
 fi
-if [ "$maintain_mode" = true ]; then
-    COMPOSE+=(-f "$SCRIPT_DIR/compose.maintain.yml")
-fi
+# Runs a command in the container. Its stdin is the caller's, so callers that
+# don't feed it anything pass </dev/null, or it eats input meant for a prompt.
+in_app() { "${COMPOSE[@]}" exec -T --user vscode "$SERVICE" "$@"; }
 
 USER_UID="$(id -u)"
 USER_GID="$(id -g)"
@@ -178,8 +237,17 @@ fi
 if [ "$docker_mode" = true ]; then
     echo -e "${YELLOW}--docker: the container runs PRIVILEGED. With dockerd inside, it is not a boundary between Claude and this host.${NC}"
 fi
-if [ "$maintain_mode" = true ]; then
-    echo -e "${YELLOW}--maintain: .devcontainer/ is writable, and this host runs it. Review changes to it before you next run start.sh.${NC}"
+if [ "$mount_mode" = true ]; then
+    echo -e "${YELLOW}--mount-workspace: the container can write this checkout, including files this host later runs: .git/hooks and .git/config (run by host git), .devcontainer/ (run by start.sh and Docker), and anything else your tools load from here. Review changes before you run git, start.sh or other tools here again. start.sh doesn't check .devcontainer/ in this mode, and after it, --rebuild's check protects nothing.${NC}"
+    echo -e "${YELLOW}The Claude login isn't kept in this mode: log in again whenever the container is recreated.${NC}"
+    # In a worktree .git is a file naming a host path the container can't see.
+    if [ ! -d "$PROJECT_ROOT/.git" ]; then
+        echo -e "${YELLOW}$PROJECT_ROOT/.git is not a directory (a git worktree?): git won't work inside the container.${NC}"
+    fi
+else
+    # External (see compose.clone.yml), so compose won't create it. A no-op
+    # when it exists.
+    docker volume create "$CLAUDE_VOLUME" >/dev/null
 fi
 
 # ── Build and start ──────────────────────────────────────────────────────────
@@ -190,20 +258,16 @@ if [ "$rebuild" = true ]; then
 else
     # --build is a cache hit unless the Dockerfile changed; `up` recreates the
     # container only when its image or config changed (e.g. toggling --docker or
-    # --maintain).
-    up_args=(--detach --build)
-    # git rewrote .git/config as a new file; a running container's bind mount
-    # still shows the old one until it's recreated.
-    if [ "$identity_changed" = true ]; then
-        up_args+=(--force-recreate)
-    fi
-    "${COMPOSE[@]}" up "${up_args[@]}"
+    # --mount-workspace). The clone's volume outlives the container either way.
+    "${COMPOSE[@]}" up --detach --build
 fi
 
+# The entrypoint exits if dockerd fails, taking the container with it, so wait
+# before running anything else in there.
 if [ "$docker_mode" = true ]; then
     echo -e "${GREEN}Waiting for dockerd inside the container...${NC}"
     timeout=90
-    until "${COMPOSE[@]}" exec -T "$SERVICE" docker info &>/dev/null; do
+    until "${COMPOSE[@]}" exec -T "$SERVICE" docker info &>/dev/null </dev/null; do
         timeout=$((timeout - 1))
         if [ "$timeout" -le 0 ]; then
             echo -e "${RED}dockerd did not start within 90s. Recent container logs:${NC}" >&2
@@ -214,16 +278,304 @@ if [ "$docker_mode" = true ]; then
     done
 fi
 
-"${COMPOSE[@]}" exec -T --user vscode "$SERVICE" .devcontainer/postStartCommand.sh
+# ── The container's own clone ────────────────────────────────────────────────
+if [ "$mount_mode" = false ]; then
+    # seeded: a finished seed. empty: a new volume. unreadable: a clone whose
+    # config git can't read (corrupt, or dubious ownership after a UID change).
+    # other: anything else, such as an interrupted seed or a volume that can't
+    # be listed. Only --reset clears the last two. empty needs a listing that
+    # worked: a failed one also prints nothing, and a failed seed then deletes
+    # what's there. git's and ls's errors go to stderr, so they're shown.
+    # shellcheck disable=SC2016 # expanded in the container
+    state="$(in_app bash -c '
+        if [ -e /workspace/.git ]; then
+            # Exit 1 is "not set"; anything above is git failing to read it.
+            seeded="$(git -C /workspace config --local --get devcontainer.seeded)"
+            status=$?
+            if [ "$status" -gt 1 ]; then echo unreadable; exit 0; fi
+            if [ -n "$seeded" ]; then echo seeded; exit 0; fi
+        fi
+        if listing="$(ls -A /workspace)" && [ -z "$listing" ]; then echo empty
+        else echo other; fi' </dev/null)"
+
+    # Before --reset deletes anything: a checkout that can't seed would leave
+    # the clone empty.
+    if [ "$state" = empty ] || [ "$reset" = true ]; then
+        if ! git -C "$PROJECT_ROOT" rev-parse --verify --quiet HEAD >/dev/null; then
+            echo -e "${RED}This checkout has no commits to seed the container's clone from.${NC}" >&2
+            exit 1
+        fi
+        # Either would leave the clone missing history it needs.
+        if [ "$(git -C "$PROJECT_ROOT" rev-parse --is-shallow-repository)" = true ]; then
+            echo -e "${RED}This checkout is shallow, so it can't seed a full clone. Run git fetch --unshallow here, then start.sh again.${NC}" >&2
+            exit 1
+        fi
+        # A filtered clone can record it per remote, without extensions.partialClone.
+        partial="$(git -C "$PROJECT_ROOT" config --get-regexp '^(extensions\.partialclone|remote\..*\.partialclonefilter)$' || true)"
+        # Any promisor value but a plain false counts, so a malformed one fails closed.
+        promisors="$(git -C "$PROJECT_ROOT" config --get-regexp '^remote\..*\.promisor$' || true)"
+        if [ -n "$partial" ] || { [ -n "$promisors" ] \
+            && grep -qviE '^[^ ]+ (false|no|off|0)$' <<<"$promisors"; }; then
+            echo -e "${RED}This checkout is a partial clone (--filter), so it lacks objects the seed needs. Run start.sh from a full clone of the repo.${NC}" >&2
+            exit 1
+        fi
+        # The seed itself, built and verified now, so a checkout missing
+        # objects the config doesn't own up to stops before --reset deletes
+        # anything. Only what the clone fetches, so nothing else (stashes,
+        # notes, other remotes) reaches the container, not even as loose
+        # objects. No lazy fetch, so a missing object fails instead of being
+        # fetched from a promisor remote.
+        # It holds every branch, so it goes in a 0700 directory: that is what
+        # keeps it private, since git may chmod the file itself (e.g. with
+        # core.sharedRepository); the umask is only belt and braces. The
+        # directory is in this checkout's git dir: the repo's own filesystem,
+        # where /tmp is often a small tmpfs, and out of the container's sight.
+        # git ignores what it doesn't know there, so a leftover from a crash
+        # only takes up space. If the git dir isn't writable, TMPDIR it is.
+        git_dir="$(git -C "$PROJECT_ROOT" rev-parse --absolute-git-dir)"
+        bundle_dir="$(umask 077 && { mktemp -d "$git_dir/devcontainer-seed.XXXXXX" 2>/dev/null || mktemp -d; })"
+        trap 'rm -rf "$bundle_dir"' EXIT
+        bundle="$bundle_dir/seed.bundle"
+        # verify says "is okay" on success; only its complaints are shown.
+        verify_out=""
+        if ! (umask 077 && GIT_NO_LAZY_FETCH=1 git -C "$PROJECT_ROOT" bundle create -q "$bundle" \
+                --branches --tags --remotes=origin HEAD) \
+            || ! verify_out="$(git -C "$PROJECT_ROOT" bundle verify -q "$bundle" 2>&1)"; then
+            if [ -n "$verify_out" ]; then echo "$verify_out" >&2; fi
+            echo -e "${RED}Couldn't bundle this checkout to seed the container's clone from (above). The clone is unchanged.${NC}" >&2
+            exit 1
+        fi
+    fi
+
+    if [ "$reset" = true ] && [ "$state" != empty ]; then
+        # Everything --reset would destroy that GitHub doesn't have. It runs in
+        # the container, so it fetches with the container's token and never
+        # touches this checkout.
+        # shellcheck disable=SC2016 # expanded in the container
+        survey='
+            cd /workspace
+            if [ ! -e .git ]; then
+                echo "No git repo in the work volume, only these files:"
+                ls -A
+                exit 0
+            fi
+            # found stays false only when every check ran and came back empty.
+            found=false
+            section() { if [ -n "$2" ]; then printf "%s\n%s\n" "$1" "$2"; found=true; fi; }
+            problem() { echo "$1"; found=true; }
+            check() {
+                local title="$1" out
+                shift
+                if out="$("$@" 2>&1)"; then section "$title" "$out"; else problem "Could not check: $title $out"; fi
+            }
+            if ! git rev-parse --git-dir >/dev/null 2>&1; then
+                problem "The .git in the clone is broken, so nothing in it could be checked."
+                exit 0
+            fi
+            fetched=false
+            if git remote get-url origin >/dev/null 2>&1; then
+                # --prune, so a branch deleted on GitHub no longer counts as pushed.
+                if GIT_TERMINAL_PROMPT=0 git fetch --quiet --prune origin; then
+                    fetched=true
+                else
+                    problem "Could not fetch from origin: the comparisons below use what was last fetched, which may be stale."
+                fi
+            else
+                problem "No origin remote: nothing here is on GitHub."
+            fi
+            # HEAD only when it names a commit: an unborn one fails the lot.
+            tips=(--branches --tags)
+            if git rev-parse --verify --quiet HEAD >/dev/null; then tips=(HEAD "${tips[@]}"); fi
+            # stderr kept apart, so a warning is never taken for the count.
+            errors="$(mktemp)"
+            if count="$(git rev-list --count "${tips[@]}" --not --remotes=origin 2>"$errors")" \
+                && [[ "$count" =~ ^[0-9]+$ ]]; then
+                if [ "$count" -gt 0 ]; then
+                    check "$count commit(s) on branches, tags or HEAD not on origin (newest 20):" \
+                        git log --oneline --decorate -n 20 "${tips[@]}" --not --remotes=origin
+                fi
+            else
+                problem "Could not check for commits that are not on origin: $count $(cat "$errors")"
+            fi
+            # Reflogs catch work dropped by a reset, or on a deleted branch that
+            # was checked out here, but also every old version a rebase, amend or
+            # squash-merge left behind; so a section of their own. The stashes
+            # section covers stash commits (each one, its index and untracked
+            # commits), so they are left out here.
+            if stashes="$(if git rev-parse --verify --quiet refs/stash >/dev/null; then
+                        git log -g --format="%H %P" refs/stash; fi 2>"$errors")" \
+                && reflogged="$(git rev-list --reflog --not "${tips[@]}" --remotes=origin 2>"$errors")"; then
+                reflogged="$(grep -vxF -f <(awk "{ print \$1; print \$3; print \$4 }" <<<"$stashes") <<<"$reflogged" || true)"
+                if [ -n "$reflogged" ]; then
+                    # rev-list lists newest first; log sorts those 20 by date again.
+                    mapfile -t newest < <(head -n 20 <<<"$reflogged")
+                    check "$(grep -c . <<<"$reflogged") commit(s) only in reflogs: old versions from a rebase, amend or squash-merge, or work dropped by a reset or a deleted branch (newest 20):" \
+                        git log --oneline --no-walk "${newest[@]}"
+                fi
+            else
+                problem "Could not check the reflogs: $(cat "$errors")"
+            fi
+            rm -f "$errors"
+            # A tag counts as pushed only when origin has the same name at the same object.
+            if [ -n "$(git for-each-ref refs/tags)" ]; then
+                if [ "$fetched" = true ] && remote_tags="$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags origin)"; then
+                    if local_tags="$(git for-each-ref --format="%(objectname) %(refname)" refs/tags)"; then
+                        section "Tags not on origin:" \
+                            "$(grep -vxF -f <(printf "%s\n" "$remote_tags" | tr "\t" " ") <<<"$local_tags" || true)"
+                    else
+                        problem "Could not check the tags."
+                    fi
+                else
+                    check "Tags (origin not checked, so counted as not on GitHub):" \
+                        git for-each-ref --format="%(refname:short)" refs/tags
+                fi
+            fi
+            check "Notes (git does not push these by default):" git for-each-ref --format="%(refname)" refs/notes
+            check "Stashes:" git stash list
+            check "Uncommitted, untracked and ignored files:" git status --porcelain --ignored
+            [ "$found" = true ] || echo "Nothing found that is not on GitHub."
+        '
+        echo -e "${YELLOW}--reset deletes everything in the container's clone. Checking what isn't on GitHub...${NC}"
+        # cat -v: the container wrote these names, so control characters can't
+        # rewrite what you see.
+        in_app bash -c "$survey" </dev/null 2>&1 | cat -v
+        if [ ! -t 0 ]; then
+            echo -e "${RED}Stopped: --reset needs a terminal to confirm on. The clone is unchanged.${NC}" >&2
+            exit 1
+        fi
+        answer=""
+        read -r -p "Delete the clone above and seed it again from this checkout? [y/N] " answer || true
+        if [ "$answer" != y ] && [ "$answer" != Y ]; then
+            echo -e "${RED}Stopped. The clone is unchanged.${NC}" >&2
+            exit 1
+        fi
+        # As root, so nothing the container made unwritable survives. The
+        # volume's root stays, with the vscode ownership it took from the image.
+        "${COMPOSE[@]}" exec -T --user root "$SERVICE" find /workspace -mindepth 1 -delete </dev/null
+        state=empty
+    fi
+
+    case "$state" in
+        seeded) ;;
+        empty)
+            # Seed once, from what this checkout has, unpushed branches included.
+            # Data only flows in: the bundle goes to the container's stdin, and
+            # nothing in the container can write back here. After this the clone
+            # fetches from GitHub itself.
+            echo -e "${GREEN}Seeding the container's clone from this checkout...${NC}"
+            seed_branch="$(git -C "$PROJECT_ROOT" symbolic-ref --quiet --short HEAD || true)"
+            # The URL as written, not as this host's insteadOf rules rewrite it;
+            # the image has its own rules for GitHub.
+            origin_url="$(git -C "$PROJECT_ROOT" config --get remote.origin.url || true)"
+            # A token or password in it would land in the container's .git/config.
+            if [[ "$origin_url" =~ ^(https?://)[^/]*@(.*)$ ]]; then
+                origin_url="${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
+                echo -e "${YELLOW}This checkout's origin URL has credentials in it; the clone gets it without them: $origin_url${NC}"
+            fi
+            # shellcheck disable=SC2016 # expanded in the container
+            seed='
+                set -euo pipefail
+                branch="$1" origin_url="$2"
+                cd /workspace
+                bundle="$(mktemp)"
+                trap "rm -f \"$bundle\"" EXIT
+                cat > "$bundle"
+                git -c init.defaultBranch=seed init -q
+                # HEAD (detached, perhaps), branches and tags, plus the branches of
+                # origin as this checkout last saw them, so the clone knows what is
+                # already pushed. The bundle holds exactly these.
+                git fetch -q --update-head-ok "$bundle" "+HEAD:refs/seed/HEAD" \
+                    "+refs/heads/*:refs/heads/*" "+refs/tags/*:refs/tags/*" \
+                    "+refs/remotes/origin/*:refs/remotes/origin/*" "^refs/remotes/origin/HEAD"
+                if [ -n "$origin_url" ]; then
+                    git remote add origin "$origin_url"
+                fi
+                if [ -n "$branch" ] && git show-ref --verify --quiet "refs/heads/$branch"; then
+                    git symbolic-ref HEAD "refs/heads/$branch"
+                    if git show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+                        git branch --quiet --set-upstream-to "origin/$branch"
+                    fi
+                else
+                    git update-ref --no-deref HEAD "$(git rev-parse refs/seed/HEAD)"
+                fi
+                git update-ref -d refs/seed/HEAD
+                git reset --quiet --hard
+                # Last, so an interrupted seed is never taken for a finished one.
+                git config devcontainer.seeded true
+            '
+            if ! in_app bash -c "$seed" seed "$seed_branch" "$origin_url" <"$bundle"; then
+                # Clear it, so the next run seeds again instead of stopping.
+                # Only the failed seed is deleted: state is empty only after a
+                # listing that worked found nothing, or a confirmed --reset.
+                "${COMPOSE[@]}" exec -T --user root "$SERVICE" find /workspace -mindepth 1 -delete </dev/null || true
+                echo -e "${RED}Seeding the container's clone failed (above); it's cleared, so the next run tries again.${NC}" >&2
+                exit 1
+            fi
+            # Now: the exec at the end replaces this shell, so the trap never runs.
+            rm -rf "$bundle_dir"
+            if [ -z "$origin_url" ]; then
+                echo -e "${YELLOW}This checkout has no origin remote, so neither does the clone: work in it can't be pushed.${NC}"
+            fi
+            ;;
+        unreadable)
+            echo -e "${RED}The container's clone exists, but git couldn't read its config (error above), e.g. dubious ownership after a UID change: check the files' owner or git's safe.directory. Fix that inside the container if you can; as a last resort, rerun with --reset, which deletes the clone and seeds it again.${NC}" >&2
+            exit 1
+            ;;
+        *)
+            echo -e "${RED}The container's /workspace isn't a finished clone (an interrupted seed?), or couldn't be listed (errors above). Rerun with --reset to clear it and seed again.${NC}" >&2
+            exit 1
+            ;;
+    esac
+fi
+
+# ── Git identity: the container can't see your ~/.gitconfig ─────────────────
+# It goes in the repo the container works in: the clone's own .git/config by
+# default, this checkout's with --mount-workspace.
+if [ "$mount_mode" = true ]; then
+    repo_git=(git -C "$PROJECT_ROOT")
+    where="this repo's .git/config"
+else
+    repo_git=(in_app git -C /workspace)
+    where="the container's clone"
+fi
+for key in user.name user.email; do
+    if [ -n "$("${repo_git[@]}" config --local --get "$key" </dev/null || true)" ]; then
+        continue
+    fi
+    if [ ! -t 0 ]; then
+        echo -e "${YELLOW}$key is not set in $where: commits inside the container will fail.${NC}"
+        continue
+    fi
+    # This checkout's own setting first, then your global one.
+    default="$(git -C "$PROJECT_ROOT" config --get "$key" || true)"
+    read -r -p "Git $key for $where${default:+ [$default]}: " value
+    value="${value:-$default}"
+    if [ -z "$value" ]; then
+        echo -e "${RED}$key is required for commits inside the container.${NC}" >&2
+        exit 1
+    fi
+    "${repo_git[@]}" config --local "$key" "$value" </dev/null
+done
+
+# The image's copy, not the clone's, so nothing in the clone can break it.
+in_app devcontainer-post-start </dev/null
 
 # %q so the line stays copy-pasteable from a checkout path containing spaces.
 printf -v stop_command '%q ' "${COMPOSE[@]}"
 echo -e "${GREEN}The container outlives this shell: rerun this script to get back in.${NC}"
 echo -e "${GREEN}Stop it with: ${stop_command}down${NC}"
+if [ "$mount_mode" = false ]; then
+    echo -e "${YELLOW}Don't add -v (--volumes) to that: it deletes the container's clone, and any work in it that isn't pushed. (The Claude login is in an external volume, which it leaves alone.)${NC}"
+fi
 
 # Herdr can't see the agent inside the container, only `docker compose`, so
 # name it on this host-side process. Set only for agents, never for a shell.
 case "$(basename "${command[0]}")" in
     claude) export HERDR_AGENT=claude ;;
 esac
-exec "${COMPOSE[@]}" exec --user vscode "$SERVICE" "${command[@]}"
+# A terminal only when there is one, so `start.sh -- CMD` also works from a script.
+exec_args=(--user vscode)
+if [ ! -t 0 ]; then
+    exec_args+=(-T)
+fi
+exec "${COMPOSE[@]}" exec "${exec_args[@]}" "$SERVICE" "${command[@]}"

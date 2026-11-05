@@ -1,0 +1,3 @@
+# In the dev container ~/.claude/skills links to /workspace/skills, so Claude Code
+# writes the user's account-synced skills here. Keep them out of this public repo.
+skills/synced/

@@ -1,9 +1,8 @@
-# Base definition shared by VS Code and start.sh. It deliberately mounts nothing
-# from the host but this checkout: no ~/.ssh, no ~/.claude, no home directory.
-# .git/hooks and .git/config are mounted read-only on top, so a prompt-injected
-# command in here can't plant code that host git later runs. .devcontainer/ is
-# read-only for the same reason: start.sh and these files run on the host. With
-# --maintain, start.sh layers compose.maintain.yml to make it writable.
+# Base definition shared by VS Code and start.sh. It mounts nothing from the
+# host: no checkout, no ~/.ssh, no ~/.claude, no home directory. Where /workspace
+# comes from is up to the overlay on top:
+#   compose.clone.yml  start.sh's default: the container's own clone, in a volume
+#   compose.mount.yml  start.sh --mount-workspace and VS Code: the host checkout
 # No ssh-agent is forwarded: git reaches GitHub over HTTPS with GH_TOKEN. With
 # --docker, start.sh layers compose.docker.yml (privileged nested Docker) on top.
 services:
@@ -14,16 +13,6 @@ services:
       args:
         USER_UID: ${USER_UID:-1000}
         USER_GID: ${USER_GID:-1000}
-    volumes:
-      - ..:/workspace:cached
-      # Host git runs hooks from here, and commands named in .git/config
-      # (core.fsmonitor, core.sshCommand, aliases, filters...). The container's
-      # own hooks come from the image; see core.hooksPath in the Dockerfile.
-      - ../.git/hooks:/workspace/.git/hooks:ro
-      - ../.git/config:/workspace/.git/config:ro
-      # start.sh, the compose files and the Dockerfile run on the host.
-      - ../.devcontainer:/workspace/.devcontainer:ro
-      - claude-config:/home/vscode/.claude
     # GH_TOKEN=... for git push and gh, from a host file outside the checkout,
     # where the container can't read or change it. It's the container's only
     # GitHub credential: a fine-grained token scoped to this repo, with no
@@ -33,9 +22,3 @@ services:
       - path: ${HOME}/.config/__PROJECT_REPO__/gh.env
         required: false
 # __PROJECT_SERVICES__
-
-volumes:
-  # A fixed name, so the Claude login is shared by every container for this
-  # repo — VS Code's and start.sh's, across checkouts and rebuilds.
-  claude-config:
-    name: __PROJECT__-claude-config

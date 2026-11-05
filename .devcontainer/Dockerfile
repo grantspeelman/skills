@@ -18,9 +18,9 @@ ARG USER_GID=1000
 #   • docker.io & co.: for `start.sh --docker` only. dockerd is started by
 #     /entrypoint.sh when ENABLE_DOCKER=1, which compose.docker.yml sets alongside
 #     privileged mode; otherwise the binaries sit unused.
-#   • No sudo, on purpose: root inside the container could undo the read-only
-#     mounts and anything else meant to hold Claude in. Tools a project needs
-#     go in here, at build time.
+#   • No sudo, on purpose: root inside the container could change the image's
+#     git setup (hooks, credential helper) and is a step closer to the host.
+#     Tools a project needs go in here, at build time.
 #   • bubblewrap/socat: what Claude Code's Linux sandbox (/sandbox) runs on.
 #     They won't run on hosts that restrict unprivileged user namespaces (Ubuntu's
 #     kernel.apparmor_restrict_unprivileged_userns=1), not even with --docker. The
@@ -115,20 +115,20 @@ RUN npm install -g @anthropic-ai/claude-code \
     && npm cache clean --force
 ENV DISABLE_AUTOUPDATER=1
 
-# Git hooks live in the image, not in the checkout: .git/hooks is mounted
-# read-only (see docker-compose.yml) so nothing in the container can plant a hook
-# that later runs on the host. Root-owned, so Claude can't edit them either.
+# Git hooks live in the image, not in the repo's .git/hooks, so every mode runs
+# the same checks and nothing gets installed into a mounted checkout's hooks.
+# Root-owned, so Claude can't edit them to skip a check.
 COPY .devcontainer/git-hooks/ /usr/local/share/git-hooks/
 RUN chmod 755 /usr/local/share/git-hooks/* && \
     git config --system core.hooksPath /usr/local/share/git-hooks && \
-    # .git/config is read-only too, so `git push -u` can't record an upstream;
-    # pushing to the same-named branch makes a plain `git push` work without one.
+    # Pushing to the same-named branch makes a plain `git push` of a new branch
+    # work without -u.
     git config --system push.default current
 
 # git talks to GitHub over HTTPS with GH_TOKEN, never over SSH: start.sh forwards
 # no ssh-agent, because an agent signs as your own key, for every repo and host
-# it reaches, while the token is scoped to this repo. The checkout's SSH remote
-# stays as it is (.git/config is read-only) and is rewritten here.
+# it reaches, while the token is scoped to this repo. An SSH remote, whether the
+# mounted checkout's or the one start.sh copies into the clone, is rewritten here.
 RUN git config --system url.https://github.com/.insteadOf git@github.com: && \
     git config --system --add url.https://github.com/.insteadOf ssh://git@github.com/ && \
     git config --system credential.https://github.com.helper '!/usr/local/bin/gh auth git-credential'
@@ -138,8 +138,8 @@ RUN git config --system url.https://github.com/.insteadOf git@github.com: && \
 # prompts nor trusts whatever answers on port 22.
 COPY .devcontainer/ssh_known_hosts /etc/ssh/ssh_known_hosts
 
-# Create the `vscode` user with the host's UID/GID so bind-mounted files are
-# owned by the same user on both sides. The
+# Create the `vscode` user with the host's UID/GID so a mounted checkout
+# (--mount-workspace, VS Code) is owned by the same user on both sides. The
 # ubuntu base image ships an `ubuntu` user at 1000:1000, which is renamed rather than duplicated.
 RUN set -eux; \
     if [ "${USER_UID}" -eq 0 ] || [ "${USER_GID}" -eq 0 ]; then \
@@ -162,9 +162,10 @@ RUN set -eux; \
     # to it is root-equivalent, which is why that mode is not a boundary.
     usermod -aG docker vscode
 
-# Claude's config dir is a named volume (see docker-compose.yml) so the login
-# survives rebuilds. Creating it here, vscode-owned, means Docker seeds a fresh
-# volume with that ownership instead of root's.
+# In start.sh's default mode both of these are named volumes (see
+# compose.clone.yml): the Claude config, so the login survives rebuilds, and the
+# container's own clone at /workspace. Creating them here, vscode-owned, means
+# Docker gives a fresh volume that ownership instead of root's.
 ENV CLAUDE_CONFIG_DIR=/home/vscode/.claude
 RUN mkdir -p /workspace "${CLAUDE_CONFIG_DIR}" && \
     chown vscode:vscode /workspace "${CLAUDE_CONFIG_DIR}"
@@ -172,6 +173,11 @@ WORKDIR /workspace
 
 COPY .devcontainer/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+# The post-start setup runs from the image, not from /workspace, so a clone (or
+# mounted checkout) that lacks it or breaks it can't stop start.sh. Root-owned,
+# so Claude can't change it either; edits reach it with a rebuild.
+COPY .devcontainer/postStartCommand.sh /usr/local/bin/devcontainer-post-start
+RUN chmod 755 /usr/local/bin/devcontainer-post-start
 # The entrypoint starts as root (for optional dockerd) and gosu-drops to vscode itself.
 # hadolint ignore=DL3002
 USER root

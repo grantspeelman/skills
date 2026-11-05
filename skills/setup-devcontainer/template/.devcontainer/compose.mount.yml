@@ -1,0 +1,11 @@
+# start.sh --mount-workspace and VS Code: the host checkout, read-write, at
+# /workspace. The container can write everything in it, including files the host
+# later runs: .git/hooks, .git/config, .devcontainer/. See the README's
+# "Two ways to get /workspace" before you use it.
+# No shared Claude config volume either, so nothing written here (settings,
+# hooks) carries over into default-mode containers. The login lasts until the
+# container is recreated.
+services:
+  app:
+    volumes:
+      - ..:/workspace:cached
