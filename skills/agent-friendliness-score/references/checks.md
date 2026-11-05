@@ -152,15 +152,19 @@ are optional and left out, as [scoring.md](scoring.md) explains.
 
 ## Reproducible setup (Feedback speed)
 
-Check the terms in [scoring.md](scoring.md): a committed lockfile, pinned tool
-versions, such as `.tool-versions` or `rust-toolchain.toml`, or a dev container or
-Nix setup, and one documented setup command. A repo without dependencies has no
-lockfile requirement, so that part is N/A.
+Check these, each where it applies:
 
-During install, note any tool it needed that the repo doesn't pin or document, and
-save these for `result.json`. A tool this machine happened to have still counts.
-Everyday system tools such as `git` don't. Label the files static and the install
-notes measured.
+- **Lockfile:** one is committed. A repo without dependencies has no lockfile
+  requirement, so this is N/A.
+- **Tool versions:** pinned in a file such as `.tool-versions` or
+  `rust-toolchain.toml`, or set by a dev container or Nix setup. Documented but
+  unpinned doesn't count as pinned.
+- **Setup command:** one documented command sets up the project.
+
+During install, note any tool it needed that the repo doesn't pin, and save these for
+`result.json`. Any such tool fails the requirement, even one this machine happened to
+have. Everyday system tools such as `git` are the exception. Label the files static
+and the install notes measured.
 
 ## Planted violations (Guardrails)
 
@@ -183,9 +187,10 @@ still apply, and top up to 5.
 A violation counts as caught only if CI runs that check, or the documented setup
 installs a hook that does. A check that only prints a warning and still exits
 successfully doesn't catch a violation. A broken CI or config file counts as caught
-only if a check in the commands fails on it locally, because the clone has no CI of
-its own. Nothing here should execute a deploy or release step. Fewer than 3
-applicable violations means this check is "not measured".
+only if a check in the commands or a documented hook fails on it locally, because the
+clone has no CI of its own. For this violation type only, run that hook in the clone,
+and list it in the plan. Nothing here should execute a deploy or release step. Fewer
+than 3 applicable violations means this check is "not measured".
 
 ## Fresh-agent checks (Context)
 
@@ -209,13 +214,18 @@ which module owns a given concern, what a new endpoint must do.
 
 Where it applies, the six must include one each on: what an agent must not do without
 asking, which environment variables and services are needed to run the project, and
-why a notable design choice was made. If the repo doesn't state the answer, keep the
-question and say so in the key. An agent saying "the repo doesn't say" is honest but
-isn't correct, because this measures what the repo tells an agent.
+why a notable design choice was made. For the last, choose the design choice with the
+most effect on a typical change, before checking whether the docs explain it.
+
+If nothing in the repo answers a question, code included, keep it and say so in the
+key. An agent saying "the repo doesn't say" is honest but isn't correct, because this
+measures what the repo tells an agent. A correct answer read from the code counts,
+such as a list of environment variables.
 
 Save both in `context/questions.md`. On a rerun, reuse them, updating the key if the
-code changed. If an older set lacks any of those three, replace questions to add it,
-and say in the report which questions are new. Give the agent only this:
+code changed. If an older set lacks any of those three, replace the questions closest
+in topic to the missing ones, never choosing by which questions failed. The report
+names the questions removed and the ones added. Give the agent only this:
 
 ```text
 Answer these questions about the repository at <sandbox>, using only what is in
@@ -285,18 +295,33 @@ classic protection, which usually needs admin. Together they give the checks tha
 are **required to merge**.
 
 Compare these with the CI checks that caught planted violations and seeded bugs,
-using the workflow files, since required checks go by job name. The planted
-violations decide the level. Report any seeded-bug check that isn't required as
-evidence. A check only a hook runs has no CI check to compare, so leave it out, but
-if every catch came from a hook, the requirement isn't met.
+using the workflow files. The planted violations decide the level. Report any
+seeded-bug check that isn't required as evidence.
 
-A check is required if either response lists it. It isn't required only if both can
-be read and neither lists it. Classic protection can be read if it returns its
-settings, or a 404 whose message says the branch isn't protected. Any other 403 or
-404 can't be read, and neither can a failed rules call, so an empty rules response
-with unreadable classic protection doesn't prove the branch is unprotected. If that
-leaves a caught check unsettled, or the host isn't GitHub, this item is left out, as
-[scoring.md](scoring.md) explains.
+Work this out in order, and stop at the first that applies:
+
+1. **The host isn't GitHub:** this item is left out, as [scoring.md](scoring.md)
+   explains.
+2. **Every catch came from a hook:** the requirement isn't met, even if the settings
+   can't be read. Report it as "only hooks caught these", never as "unprotected".
+3. **Otherwise,** leave hook-only catches out of the comparison, and give each caught
+   CI check one of the states below. If any is not required, the requirement isn't
+   met. If all are required, it's met. Otherwise this item is left out.
+
+- **Required:** either response lists it. A check's name can differ from the job key,
+  because of a `name:` override or a matrix suffix. It's also required if a required
+  job depends on it through `needs` and fails when it fails, or if it runs inside a
+  required external status, such as one `buildkite/pipeline` status covering every
+  step.
+- **Not required:** both responses can be read, and none of the above connects it to
+  a required check.
+- **Left out:** you can't establish the mapping, or one response can't be read and
+  the other doesn't make it required.
+
+Classic protection can be read if it returns its settings, or a 404 whose message
+says the branch isn't protected. Any other 403 or 404 can't be read, and neither can
+a failed rules call, so an empty rules response with unreadable classic protection
+doesn't prove the branch is unprotected.
 
 Label this static, because it reads settings. It doesn't make Guardrails measured by
 itself. Also record whether reviews are required and whether a `CODEOWNERS` file

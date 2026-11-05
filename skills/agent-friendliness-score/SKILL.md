@@ -77,10 +77,14 @@ mistakes and a damaged state file, nothing stronger.
   running anything. Do the same if a run does something the plan didn't cover.
 - Tests that reach production or shared services are a Guardrails finding, labelled
   static, so name it in the plan. If you can't tell whether a service is shared, ask
-  rather than assume. If the user lets the run go on, for example with a safe target,
-  test isolation scores as failed unless the safe target is the repo's documented
-  default. If the run stops there, tell the user this finding is why, and run
-  `sandbox finish`, without `--complete`, if `sandbox setup` has run.
+  rather than assume. Test isolation then has one of three results:
+  - The user confirms nothing reaches production or shared services: it passes.
+  - They're reached under the default the repo's config or docs set: it fails, even
+    if the user supplies a safe target for this run.
+  - The user can't say: it's not measured, with a ceiling.
+
+  If the run stops there, tell the user this finding is why, and run `sandbox finish`,
+  without `--complete`, if `sandbox setup` has run.
 - Never guess a result. A check that could not run is "not measured".
 - The full report, `result.json`, patches and state stay in the save folder, which
   is always outside the scored repo. Paraphrase code and review comments where you
@@ -254,6 +258,7 @@ This skill is a work in progress.
 ## Evidence
 One section per category. List each item with its label, static or measured,
 and each check marked not measured or N/A with the reason.
+Left out, with reason: merge rules, because classic protection returned 403.
 
 ## Seeded bugs
 Who wrote them. A table of bug, risk category, caught or missed, and what caught
@@ -279,7 +284,8 @@ are what reruns compare against:
 
 - `report.md`: the report above.
 - `result.json`: commit, date, scores, whether each category is measured, raw
-  metrics, merge rules and setup findings, who wrote the bugs, the result for each
+  metrics, the merge state (required, not required or left out), the test isolation
+  result, setup findings, replaced questions, who wrote the bugs, the result for each
   patch, and the exact commands and searches used, so the next run can compare and
   repeat them.
 

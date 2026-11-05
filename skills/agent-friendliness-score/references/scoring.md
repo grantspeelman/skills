@@ -40,9 +40,11 @@ Two kinds of missing requirement are treated differently:
 
 **Optional items.** Flaky rate, CI time, review history and merge rules live on a
 hosting service, so they say more about access or the CI provider than about the
-repo. When they can't be reached, leave them out and don't show a ceiling. When they
-can, they count like any other requirement. A repo on another CI system can still
-reach level 20.
+repo. When they can't be reached, leave them out, name each with the reason in the
+report, and don't show a ceiling. When they can, they count like any other
+requirement. A repo on another CI system can still reach level 20.
+[checks.md](checks.md) sets the order for merge rules, including when only hooks
+caught violations.
 
 ## Verification
 
@@ -73,8 +75,8 @@ at least 80% scores 15, at least 60% scores 10, and anything lower scores 5.
 
 How fast does an agent get a signal it can trust? "Relevant tests" is the time for
 the tests relevant to a typical change. "Reproducible setup" means dependencies are
-locked, tool versions are pinned (a dev container or Nix setup also counts), and one
-documented command sets up the project, each where it applies.
+locked, tool versions are pinned, not just documented (a dev container or Nix setup
+also counts), and one documented command sets up the project, each where it applies.
 
 | Score | Static | Measured |
 |-------|--------|----------|
@@ -129,9 +131,11 @@ Without a duplication tool, this category stops at 10. Show it as a ceiling,
 
 Do mechanical checks enforce the conventions? "Catch rate" is the share of planted
 violations caught. "Required to merge" is defined in [checks.md](checks.md). "Test
-isolation" means the test setup by default uses only local or test services, not
-production or shared ones. It's static evidence from the service search in step 1 of
-[SKILL.md](../SKILL.md). If the tests use no services, it's N/A.
+isolation" means that under the default the repo's config or docs set, tests use only
+local or test services, not production or shared ones. It's static evidence from the
+service search in step 1 of [SKILL.md](../SKILL.md), and "Rules for the whole run"
+there gives the result when that search flags a service. If the tests use no
+services, it's N/A.
 
 | Score | Static | Measured |
 |-------|--------|----------|
