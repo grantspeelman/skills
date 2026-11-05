@@ -75,6 +75,12 @@ mistakes and a damaged state file, nothing stronger.
   `sandbox run -- env NAME=value <command>`.
 - If tests appear to reach production or shared services, stop and ask before
   running anything. Do the same if a run does something the plan didn't cover.
+- Tests that reach production or shared services are a Guardrails finding, labelled
+  static, so name it in the plan. If you can't tell whether a service is shared, ask
+  rather than assume. If the user lets the run go on, for example with a safe target,
+  test isolation scores as failed unless the safe target is the repo's documented
+  default. If the run stops there, tell the user this finding is why, and run
+  `sandbox finish`, without `--complete`, if `sandbox setup` has run.
 - Never guess a result. A check that could not run is "not measured".
 - The full report, `result.json`, patches and state stay in the save folder, which
   is always outside the scored repo. Paraphrase code and review comments where you
@@ -109,7 +115,9 @@ its setup. Note whether the working tree has uncommitted changes, because only t
 commit gets scored.
 
 Look for services the tests may touch: Docker Compose files, database and queue
-config, required environment variables, and HTTP calls without a stub library.
+config, required environment variables, and HTTP calls without a stub library. This
+search is the static evidence for test isolation in
+[references/scoring.md](references/scoring.md).
 
 Run `sandbox find-report-folder`, passing the package path if there is one, for the
 plan's report location.
@@ -138,7 +146,8 @@ Credentials:  unset by name for test runs: AWS_SECRET_ACCESS_KEY, GH_TOKEN
               This goes by name and path, so it can miss some.
 Seeded:       10 bugs, plus 5 planted convention violations
 Agents:       3 fresh agents, one for the bugs and two for the docs check
-Other:        npx jscpd for duplication; read-only gh calls for CI history
+Other:        npx jscpd for duplication; read-only gh calls for CI history and
+              merge rules
 Access:       save folder ok, temp ok, network ok, gh ok
 Budget:       unknown until the first test run. Stops at 60 minutes.
 Saved to:     ~/.agent-friendliness-score/payments-api-1a2b3c4d/ (full results)
@@ -178,7 +187,8 @@ Run `sandbox paths` if you need them again.
 Install dependencies with `sandbox run`, the way the repo documents. If a private
 dependency needs a credential, the plan can list `sandbox run --keep NAME`, for the
 install only. Then run `sandbox settle`, even if install changed nothing or failed.
-`apply` and `capture` refuse to run until you have.
+`apply` and `capture` refuse to run until you have. Note what the install needed, as
+"Reproducible setup" in [references/checks.md](references/checks.md) says.
 
 If install fails, follow "When the baseline fails" in
 [references/checks.md](references/checks.md). Setup warns about submodules, Git
@@ -196,7 +206,7 @@ Run these in order, as [references/checks.md](references/checks.md) describes:
 5. Run the planted violations.
 6. Run the two fresh-agent checks.
 7. Run the consistency counts.
-8. Read CI and review history with `gh`, if available.
+8. Read CI history, review history and merge rules with `gh`, if available.
 
 Run `sandbox restore` between changes to the clone. Don't use bare git commands
 to restore. If there are no tests, skip steps 1 to 4 and carry on with the rest.
@@ -219,8 +229,9 @@ metric it moves, the current and target values, and roughly how many points it's
 worth. Make fixes about this repo and about classes of mistake. "Add tests for
 these ten patches" only games the rerun, so don't suggest it. A gap in this run's
 measurement isn't a fix either, so "install jscpd" or "move to GitHub Actions"
-can't rank. List those gaps as ceilings in the evidence. Don't apply any fix. This
-skill only reports.
+can't rank. List those gaps as ceilings in the evidence. A fix must also pass the
+evidence filter in [references/scoring.md](references/scoring.md). Don't apply any
+fix. This skill only reports.
 
 ## 8. Report, save and clean up
 
@@ -268,8 +279,9 @@ are what reruns compare against:
 
 - `report.md`: the report above.
 - `result.json`: commit, date, scores, whether each category is measured, raw
-  metrics, who wrote the bugs, the result for each patch, and the exact commands
-  and searches used, so the next run can compare and repeat them.
+  metrics, merge rules and setup findings, who wrote the bugs, the result for each
+  patch, and the exact commands and searches used, so the next run can compare and
+  repeat them.
 
 Then run `sandbox finish --complete --report-to <folder>`, or leave out `--report-to`
 if the user chose the home folder only. This compares the scored repo first and

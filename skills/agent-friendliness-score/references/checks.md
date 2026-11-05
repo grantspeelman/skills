@@ -103,8 +103,9 @@ wrong behaviour. Record which check caught it. A type checker rejecting the wron
 behaviour is a catch.
 
 - These don't count as catches: gates that fail on any patch, such as
-  `git diff --exit-code` or a coverage threshold any change trips, and style-only
-  failures, such as a lint error on an unused variable.
+  `git diff --exit-code` or a coverage threshold any change trips, style-only
+  failures, such as a lint error on an unused variable, and a warning from a check
+  that still exits successfully.
 - A bug is **invalid** and gets replaced if it has a syntax error or an undefined
   name, if it trips only those gates, or if it turns out not to change behaviour.
 - If a single test is the only new failure, run `sandbox restore` and rerun that
@@ -149,6 +150,18 @@ CI time is the median duration of successful runs. Treat the share of runs with
 `attempt` above 1 as the flaky rate. Without `gh`, or on another CI system, both
 are optional and left out, as [scoring.md](scoring.md) explains.
 
+## Reproducible setup (Feedback speed)
+
+Check the terms in [scoring.md](scoring.md): a committed lockfile, pinned tool
+versions, such as `.tool-versions` or `rust-toolchain.toml`, or a dev container or
+Nix setup, and one documented setup command. A repo without dependencies has no
+lockfile requirement, so that part is N/A.
+
+During install, note any tool it needed that the repo doesn't pin or document, and
+save these for `result.json`. A tool this machine happened to have still counts.
+Everyday system tools such as `git` don't. Label the files static and the install
+notes measured.
+
 ## Planted violations (Guardrails)
 
 Plant 5 violations, picking from these where they apply:
@@ -159,6 +172,8 @@ Plant 5 violations, picking from these where they apply:
 - a call across a module boundary the repo says is off limits
 - an obvious security flaw, such as unsanitised input in a query
 - a fake credential in a real provider's format, invented for this run
+- a broken CI or config file, such as an invalid workflow or a config that fails its
+  schema
 
 For each, edit the clone, run `sandbox capture violations/<NN>-<type>.patch`, then
 apply it, run the commands as CI runs them, and restore. If a scanner reads staged
@@ -166,8 +181,11 @@ files, staging in the clone is fine. On a rerun, reuse the earlier patches that
 still apply, and top up to 5.
 
 A violation counts as caught only if CI runs that check, or the documented setup
-installs a hook that does. Fewer than 3 applicable violations means this check is
-"not measured".
+installs a hook that does. A check that only prints a warning and still exits
+successfully doesn't catch a violation. A broken CI or config file counts as caught
+only if a check in the commands fails on it locally, because the clone has no CI of
+its own. Nothing here should execute a deploy or release step. Fewer than 3
+applicable violations means this check is "not measured".
 
 ## Fresh-agent checks (Context)
 
@@ -187,9 +205,17 @@ same way as a test that was read.
 **Repo questions.** Write 6 questions an agent starting a task here would need
 answered, with an answer key you checked against the code. For example: which
 command proves a change to a given area works, where a given rule is enforced,
-which module owns a given concern, what a new endpoint must do. Save both in
-`context/questions.md`. On a rerun, reuse them, updating the key if the code
-changed. Give the agent only this:
+which module owns a given concern, what a new endpoint must do.
+
+Where it applies, the six must include one each on: what an agent must not do without
+asking, which environment variables and services are needed to run the project, and
+why a notable design choice was made. If the repo doesn't state the answer, keep the
+question and say so in the key. An agent saying "the repo doesn't say" is honest but
+isn't correct, because this measures what the repo tells an agent.
+
+Save both in `context/questions.md`. On a rerun, reuse them, updating the key if the
+code changed. If an older set lacks any of those three, replace questions to add it,
+and say in the report which questions are new. Give the agent only this:
 
 ```text
 Answer these questions about the repository at <sandbox>, using only what is in
@@ -243,3 +269,35 @@ gh api "repos/{owner}/{repo}/pulls/comments?per_page=100&sort=created&direction=
 Find conventions corrected at least twice, then check whether a lint rule or
 structural test now enforces each one. Paraphrase. If review history can't be read,
 this item is optional and left out, as [scoring.md](scoring.md) explains.
+
+## Merge rules (Guardrails, optional)
+
+A check that runs in CI but isn't required can still be merged. Run from the scored
+repo:
+
+```bash
+gh api repos/{owner}/{repo}/rules/branches/<default branch>
+gh api repos/{owner}/{repo}/branches/<default branch>/protection
+```
+
+The first returns rulesets, so look for `required_status_checks`. The second is
+classic protection, which usually needs admin. Together they give the checks that
+are **required to merge**.
+
+Compare these with the CI checks that caught planted violations and seeded bugs,
+using the workflow files, since required checks go by job name. The planted
+violations decide the level. Report any seeded-bug check that isn't required as
+evidence. A check only a hook runs has no CI check to compare, so leave it out, but
+if every catch came from a hook, the requirement isn't met.
+
+A check is required if either response lists it. It isn't required only if both can
+be read and neither lists it. Classic protection can be read if it returns its
+settings, or a 404 whose message says the branch isn't protected. Any other 403 or
+404 can't be read, and neither can a failed rules call, so an empty rules response
+with unreadable classic protection doesn't prove the branch is unprotected. If that
+leaves a caught check unsettled, or the host isn't GitHub, this item is left out, as
+[scoring.md](scoring.md) explains.
+
+Label this static, because it reads settings. It doesn't make Guardrails measured by
+itself. Also record whether reviews are required and whether a `CODEOWNERS` file
+exists.
