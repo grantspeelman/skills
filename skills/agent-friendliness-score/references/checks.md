@@ -119,9 +119,9 @@ Fewer than 5 valid bugs that ran means seeded bugs are "not measured".
 
 - **Tests fail only because this run withheld a variable or credential:** that isn't a
   suite failure, so never score it as Verification 0. If nothing passes, seeded bugs
-  are not measured. If some tests pass, score what ran against the baseline, and
-  report which tests couldn't run. If the docs don't mention the variable, the
-  Feedback speed failure below still applies.
+  and test timings are not measured. If some tests pass, score what ran against the
+  baseline, and report which tests couldn't run. If the docs don't mention the
+  variable, the Feedback speed failure below still applies.
 - **`sandbox settle` printed `earlier_reports_removed_from_clone`, and only a link
   checker or similar fails on those files:** that comes from this run removing them, so it
   isn't the repo's failure. Leave that failure out of the score.
