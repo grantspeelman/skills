@@ -163,8 +163,9 @@ Check these, each where it applies:
 
 During install, note any tool it needed that the repo doesn't pin, and save these for
 `result.json`. Any such tool fails the requirement, even one this machine happened to
-have. Everyday system tools such as `git` are the exception. Label the files static
-and the install notes measured.
+have. These everyday system tools don't need pinning: `git`, `make`, `curl`, a shell,
+a C compiler and Docker. Anything else does. Label the files static and the install
+notes measured.
 
 ## Planted violations (Guardrails)
 
@@ -180,17 +181,18 @@ Plant 5 violations, picking from these where they apply:
   schema
 
 For each, edit the clone, run `sandbox capture violations/<NN>-<type>.patch`, then
-apply it, run the commands as CI runs them, and restore. If a scanner reads staged
-files, staging in the clone is fine. On a rerun, reuse the earlier patches that
-still apply, and top up to 5.
+apply it and run the commands as CI runs them. If the commands don't catch a violation
+and a documented hook runs a check for it, run that hook in the clone with
+`sandbox run`, and list it in the plan. If a scanner or hook reads staged files,
+staging in the clone is fine. Then restore. On a rerun, reuse the earlier patches
+that still apply, and top up to 5.
 
 A violation counts as caught only if CI runs that check, or the documented setup
 installs a hook that does. A check that only prints a warning and still exits
 successfully doesn't catch a violation. A broken CI or config file counts as caught
 only if a check in the commands or a documented hook fails on it locally, because the
-clone has no CI of its own. For this violation type only, run that hook in the clone,
-and list it in the plan. Nothing here should execute a deploy or release step. Fewer
-than 3 applicable violations means this check is "not measured".
+clone has no CI of its own. Nothing here should execute a deploy or release step.
+Fewer than 3 applicable violations means this check is "not measured".
 
 ## Fresh-agent checks (Context)
 
@@ -302,19 +304,21 @@ Work this out in order, and stop at the first that applies:
 
 1. **The host isn't GitHub:** this item is left out, as [scoring.md](scoring.md)
    explains.
-2. **Every catch came from a hook:** the requirement isn't met, even if the settings
-   can't be read. Report it as "only hooks caught these", never as "unprotected".
-3. **Otherwise,** leave hook-only catches out of the comparison, and give each caught
-   CI check one of the states below. If any is not required, the requirement isn't
-   met. If all are required, it's met. Otherwise this item is left out.
+2. **Every planted-violation catch came from a hook:** the requirement isn't met, even
+   if the settings can't be read. Report it as "only hooks caught these", never as
+   "unprotected".
+3. **Otherwise,** leave hook-only catches out of the comparison, and give each CI
+   check that caught a planted violation one of the states below. If any is not
+   required, the requirement isn't met. If all are required, it's met. Otherwise this
+   item is left out.
 
 - **Required:** either response lists it. A check's name can differ from the job key,
   because of a `name:` override or a matrix suffix. It's also required if a required
   job depends on it through `needs` and fails when it fails, or if it runs inside a
   required external status, such as one `buildkite/pipeline` status covering every
   step.
-- **Not required:** both responses can be read, and none of the above connects it to
-  a required check.
+- **Not required:** both responses can be read, and you can establish that no required
+  check covers it.
 - **Left out:** you can't establish the mapping, or one response can't be read and
   the other doesn't make it required.
 

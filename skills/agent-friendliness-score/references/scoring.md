@@ -134,8 +134,11 @@ violations caught. "Required to merge" is defined in [checks.md](checks.md). "Te
 isolation" means that under the default the repo's config or docs set, tests use only
 local or test services, not production or shared ones. It's static evidence from the
 service search in step 1 of [SKILL.md](../SKILL.md), and "Rules for the whole run"
-there gives the result when that search flags a service. If the tests use no
-services, it's N/A.
+there gives the result when that search flags a production or possibly shared
+service. A clearly local default, such as Postgres from the repo's compose file,
+passes with no question. With no default, such as a required `DATABASE_URL` with no
+value set, it fails unless the docs direct users to a local or test service. If the
+tests use no services, it's N/A.
 
 | Score | Static | Measured |
 |-------|--------|----------|

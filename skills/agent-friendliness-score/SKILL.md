@@ -75,13 +75,20 @@ mistakes and a damaged state file, nothing stronger.
   `sandbox run -- env NAME=value <command>`.
 - If tests appear to reach production or shared services, stop and ask before
   running anything. Do the same if a run does something the plan didn't cover.
-- Tests that reach production or shared services are a Guardrails finding, labelled
-  static, so name it in the plan. If you can't tell whether a service is shared, ask
-  rather than assume. Test isolation then has one of three results:
+- If the search in step 1 flags a production or possibly shared service, that's a
+  Guardrails finding, labelled static, so name it in the plan. A clearly local
+  default, such as Postgres from the repo's compose file, passes with no question,
+  and [references/scoring.md](references/scoring.md) covers a service with no default.
+  If you can't tell whether a service is shared, ask rather than assume. Test
+  isolation then has one of three results:
   - The user confirms nothing reaches production or shared services: it passes.
   - They're reached under the default the repo's config or docs set: it fails, even
     if the user supplies a safe target for this run.
-  - The user can't say: it's not measured, with a ceiling.
+  - The user can't say: it's not measured, with a ceiling. Don't run anything that
+    could reach that service. Go on only with a safe target from the user, or if they
+    explicitly accept the risk. Otherwise stop. A safe target still leaves test
+    isolation not measured, because the repo's default remains unknown. Confirming
+    the plan doesn't count as accepting this risk.
 
   If the run stops there, tell the user this finding is why, and run `sandbox finish`,
   without `--complete`, if `sandbox setup` has run.
