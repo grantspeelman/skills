@@ -70,8 +70,9 @@ mistakes and a damaged state file, nothing stronger.
 - Never copy `.env` files, credentials or other secret files into the clone or a
   report. `sandbox run` unsets variables whose names look like credentials. That
   goes by name, so it can miss some, and tests can still read files in the home
-  directory. If tests need a credential, mark the affected checks "not measured"
-  unless the user gives a value that's safe for testing. Pass that with
+  directory. If tests need a credential, "When the baseline fails" in
+  [references/checks.md](references/checks.md) says how to score it, unless the user
+  gives a value that's safe for testing. Pass that with
   `sandbox run -- env NAME=value <command>`.
 - If tests appear to reach production or shared services, stop and ask before
   running anything. Do the same if a run does something the plan didn't cover.
@@ -83,9 +84,9 @@ mistakes and a damaged state file, nothing stronger.
   [references/scoring.md](references/scoring.md), whatever the user answers. To run,
   never inherit a value: name the variable in the plan, and pass a safe value from the
   user with `sandbox run -- env NAME=value`, or clear it with `env -u NAME`. With no
-  safe value, mark the affected checks not measured. If you can't tell whether a
-  service is shared, ask rather than assume. Test isolation then has one of three
-  results:
+  safe value, "When the baseline fails" in [references/checks.md](references/checks.md)
+  says how to score it. If you can't tell whether a service is shared, ask rather than
+  assume. Test isolation then has one of three results:
   - The user confirms nothing reaches production or shared services: it passes.
   - They're reached under the default the repo's config or docs set: it fails, even
     if the user supplies a safe target for this run.
