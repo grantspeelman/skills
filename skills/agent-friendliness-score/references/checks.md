@@ -103,8 +103,9 @@ wrong behaviour. Record which check caught it. A type checker rejecting the wron
 behaviour is a catch.
 
 - These don't count as catches: gates that fail on any patch, such as
-  `git diff --exit-code` or a coverage threshold any change trips, and style-only
-  failures, such as a lint error on an unused variable.
+  `git diff --exit-code` or a coverage threshold any change trips, style-only
+  failures, such as a lint error on an unused variable, and a warning from a check
+  that still exits successfully.
 - A bug is **invalid** and gets replaced if it has a syntax error or an undefined
   name, if it trips only those gates, or if it turns out not to change behaviour.
 - If a single test is the only new failure, run `sandbox restore` and rerun that
@@ -116,6 +117,11 @@ Fewer than 5 valid bugs that ran means seeded bugs are "not measured".
 
 ### When the baseline fails
 
+- **Tests fail only because this run withheld a variable or credential:** that isn't a
+  suite failure, so never score it as Verification 0. If nothing passes, seeded bugs
+  and test timings are not measured. If some tests pass, score what ran against the
+  baseline, and report which tests couldn't run. If the docs don't mention the
+  variable, the Feedback speed failure below still applies.
 - **`sandbox settle` printed `earlier_reports_removed_from_clone`, and only a link
   checker or similar fails on those files:** that comes from this run removing them, so it
   isn't the repo's failure. Leave that failure out of the score.
@@ -124,8 +130,8 @@ Fewer than 5 valid bugs that ran means seeded bugs are "not measured".
   nothing, so Verification is 0.
 - **Setup needs something the docs don't mention:** that's a measured Feedback speed
   failure. Mark seeded bugs "not measured".
-- **The docs are right and this machine lacks it,** such as a toolchain or a secret
-  you can't copy: mark the affected checks "not measured", and say what was missing.
+- **The docs are right and this machine lacks it,** such as a toolchain: mark the
+  affected checks "not measured", and say what was missing.
   The same goes for a hook installer refusing because this machine sets a global
   `core.hooksPath`.
 
@@ -149,6 +155,23 @@ CI time is the median duration of successful runs. Treat the share of runs with
 `attempt` above 1 as the flaky rate. Without `gh`, or on another CI system, both
 are optional and left out, as [scoring.md](scoring.md) explains.
 
+## Reproducible setup (Feedback speed)
+
+Check these, each where it applies:
+
+- **Lockfile:** one is committed. A repo without dependencies has no lockfile
+  requirement, so this is N/A.
+- **Tool versions:** pinned in a file such as `.tool-versions` or
+  `rust-toolchain.toml`, or set by a dev container or Nix setup. Documented but
+  unpinned doesn't count as pinned.
+- **Setup command:** one documented command sets up the project.
+
+During install, note any tool it needed that the repo doesn't pin, and save these for
+`result.json`. Any such tool fails the requirement, even one this machine happened to
+have. These everyday system tools don't need pinning: `git`, `make`, `curl`, a shell
+and its standard utilities, a C compiler and Docker. Anything else does. Tools bundled
+with a pinned tool are covered. Label the files static and the install notes measured.
+
 ## Planted violations (Guardrails)
 
 Plant 5 violations, picking from these where they apply:
@@ -159,15 +182,22 @@ Plant 5 violations, picking from these where they apply:
 - a call across a module boundary the repo says is off limits
 - an obvious security flaw, such as unsanitised input in a query
 - a fake credential in a real provider's format, invented for this run
+- a broken CI or config file, such as an invalid workflow or a config that fails its
+  schema
 
 For each, edit the clone, run `sandbox capture violations/<NN>-<type>.patch`, then
-apply it, run the commands as CI runs them, and restore. If a scanner reads staged
-files, staging in the clone is fine. On a rerun, reuse the earlier patches that
-still apply, and top up to 5.
+apply it and run the commands as CI runs them. If the commands don't catch a violation
+and a documented hook runs a check for it, run that hook in the clone with
+`sandbox run`, as the plan lists. If a scanner or hook reads staged files,
+staging in the clone is fine. Then restore. On a rerun, reuse the earlier patches
+that still apply, and top up to 5.
 
 A violation counts as caught only if CI runs that check, or the documented setup
-installs a hook that does. Fewer than 3 applicable violations means this check is
-"not measured".
+installs a hook that does. A check that only prints a warning and still exits
+successfully doesn't catch a violation. A broken CI or config file counts as caught
+only if a check in the commands or a documented hook fails on it locally, because the
+clone has no CI of its own. Nothing here should execute a deploy or release step.
+Fewer than 3 applicable violations means this check is "not measured".
 
 ## Fresh-agent checks (Context)
 
@@ -187,9 +217,22 @@ same way as a test that was read.
 **Repo questions.** Write 6 questions an agent starting a task here would need
 answered, with an answer key you checked against the code. For example: which
 command proves a change to a given area works, where a given rule is enforced,
-which module owns a given concern, what a new endpoint must do. Save both in
-`context/questions.md`. On a rerun, reuse them, updating the key if the code
-changed. Give the agent only this:
+which module owns a given concern, what a new endpoint must do.
+
+Where it applies, the six must include one each on: what an agent must not do without
+asking, which environment variables and services are needed to run the project, and
+why a notable design choice was made. For the last, choose the design choice with the
+most effect on a typical change, before checking whether the docs explain it.
+
+If nothing in the repo answers a question, code included, keep it and say so in the
+key. An agent saying "the repo doesn't say" is honest but isn't correct, because this
+measures what the repo tells an agent. A correct answer read from the code counts,
+such as a list of environment variables.
+
+Save both in `context/questions.md`. On a rerun, reuse them, updating the key if the
+code changed. If an older set lacks any of those three, replace the questions closest
+in topic to the missing ones, never choosing by which questions failed. The report
+names the questions removed and the ones added. Give the agent only this:
 
 ```text
 Answer these questions about the repository at <sandbox>, using only what is in
@@ -243,3 +286,52 @@ gh api "repos/{owner}/{repo}/pulls/comments?per_page=100&sort=created&direction=
 Find conventions corrected at least twice, then check whether a lint rule or
 structural test now enforces each one. Paraphrase. If review history can't be read,
 this item is optional and left out, as [scoring.md](scoring.md) explains.
+
+## Merge rules (Guardrails, optional)
+
+A check that runs in CI but isn't required can still be merged. Run from the scored
+repo:
+
+```bash
+gh api repos/{owner}/{repo}/rules/branches/<default branch>
+gh api repos/{owner}/{repo}/branches/<default branch>/protection
+```
+
+The first returns rulesets, so look for `required_status_checks`. The second is
+classic protection, which usually needs admin. Together they give the checks that
+are **required to merge**.
+
+Compare these with the CI checks that caught planted violations and seeded bugs,
+using the workflow files. The planted violations decide the level. Report any
+seeded-bug check that isn't required as evidence.
+
+Work this out in order, and stop at the first that applies:
+
+1. **The host isn't GitHub:** this item is left out, as [scoring.md](scoring.md)
+   explains.
+2. **Every planted-violation catch came from a hook:** the requirement isn't met, even
+   if the settings can't be read. Report it as "only hooks caught these", never as
+   "unprotected".
+3. **Otherwise,** leave hook-only catches out of the comparison, and give each CI
+   check that caught a planted violation one of the states below. If any is not
+   required, the requirement isn't met. If all are required, it's met. Otherwise this
+   item is left out.
+
+- **Required:** either response lists it. A check's name can differ from the job key,
+  because of a `name:` override or a matrix suffix. It's also required if a required
+  job depends on it through `needs` and fails when it fails, or if it runs inside a
+  required external status, such as one `buildkite/pipeline` status covering every
+  step.
+- **Not required:** both responses can be read, and you can establish that no required
+  check covers it.
+- **Left out:** you can't establish the mapping, or one response can't be read and
+  the other doesn't make it required.
+
+Classic protection can be read if it returns its settings, or a 404 whose message
+says the branch isn't protected. Any other 403 or 404 can't be read, and neither can
+a failed rules call, so an empty rules response with unreadable classic protection
+doesn't prove the branch is unprotected.
+
+Label this static, because it reads settings. It doesn't make Guardrails measured by
+itself. Also record whether reviews are required and whether a `CODEOWNERS` file
+exists.

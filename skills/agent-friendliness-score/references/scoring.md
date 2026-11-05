@@ -19,6 +19,10 @@ skill. It never counts as documentation or evidence in any category. A repo's ow
 file with a similar name, such as `agent-friendliness-report-guide.md`, counts as
 usual.
 
+**Evidence filter.** Only count a piece of static evidence, or suggest a fix, if you
+can answer "if this is missing, what goes wrong for an agent?". A license, code of
+conduct, stale-issue bot or label automation has no clear answer, so it doesn't count.
+
 To pick the level:
 
 1. If level 0's condition holds, score 0.
@@ -34,11 +38,13 @@ Two kinds of missing requirement are treated differently:
   `15/20 (ceiling: rules match not measured)`. A ceiling is a gap in this run, so it
   never counts as a top fix.
 
-**Optional items.** Flaky rate, CI time and review history live on a hosting service,
-so they say more about access or the CI provider than about the repo. When that
-history can't be reached, leave them out and don't show a ceiling. When it can, they
-count like any other requirement. A repo on another CI system can still reach
-level 20.
+**Optional items.** Flaky rate, CI time, review history and merge rules live on a
+hosting service, so they say more about access or the CI provider than about the
+repo. When they can't be reached, leave them out, name each with the reason in the
+report, and don't show a ceiling. When they can, they count like any other
+requirement. A repo on another CI system can still reach level 20.
+[checks.md](checks.md) sets the order for merge rules, including when only hooks
+caught violations.
 
 ## Verification
 
@@ -68,15 +74,17 @@ at least 80% scores 15, at least 60% scores 10, and anything lower scores 5.
 ## Feedback speed
 
 How fast does an agent get a signal it can trust? "Relevant tests" is the time for
-the tests relevant to a typical change.
+the tests relevant to a typical change. "Reproducible setup" means dependencies are
+locked, tool versions are pinned, not just documented (a dev container or Nix setup
+also counts), and one documented command sets up the project, each where it applies.
 
 | Score | Static | Measured |
 |-------|--------|----------|
 | 0 | No test command can be found. | No test command can be found or run. |
 | 5 | A test command exists but is undocumented. | Following the docs fails, or relevant tests take 30 minutes or more. |
 | 10 | One documented command proves a change works, and running a single test file is documented. | The documented command works, and relevant tests take under 30 minutes. |
-| 15 | | The documented command works on a clean checkout, relevant tests take under 5 minutes, and one test file runs in under 60 seconds. |
-| 20 | | Relevant tests take under 60 seconds, one test file runs in under 15 seconds, no local flakes, flaky rate at most 2% and CI under 15 minutes (both optional), and an agent can read logs and errors from the repo's documented tools. |
+| 15 | | The documented command works on a clean checkout, relevant tests take under 5 minutes, one test file runs in under 60 seconds, and the repo has a reproducible setup. |
+| 20 | | Relevant tests take under 60 seconds, one test file runs in under 15 seconds, no local flakes, flaky rate at most 2% and CI under 15 minutes (both optional), an agent can read logs and errors from the repo's documented tools, and the repo has a reproducible setup. |
 
 ## Context
 
@@ -94,6 +102,13 @@ of repo questions answered correctly. "Rules match" is defined in
 
 Only committed MCP config counts. What's on a developer's machine isn't evidence
 about the repo.
+
+Record these as static evidence. They don't change the level: committed agent
+settings, hooks, skills and editor rules, such as `.claude/settings.json`,
+`.cursor/rules/` or `.github/copilot-instructions.md`, instruction files in
+subdirectories, and whether a second agent tool would pick up the same instructions.
+A `CLAUDE.md` with no `AGENTS.md` leaves Codex without them. When scoring a package,
+check for instruction files that apply to that package's path.
 
 ## Consistency
 
@@ -115,15 +130,27 @@ Without a duplication tool, this category stops at 10. Show it as a ceiling,
 ## Guardrails
 
 Do mechanical checks enforce the conventions? "Catch rate" is the share of planted
-violations caught.
+violations caught. "Required to merge" is defined in [checks.md](checks.md). "Test
+isolation" means that under the default the repo's config or docs set, tests use only
+local or test services, not production or shared ones. It's static evidence from the
+service search in step 1 of [SKILL.md](../SKILL.md), and "Rules for the whole run"
+there gives the result when that search flags a production or possibly shared
+service. A clearly local default, such as Postgres from the repo's compose file,
+passes with no question. With no default, such as a required `DATABASE_URL` with no
+value set, it fails unless the docs direct users to a local or test service. If the
+tests use no services, it's N/A.
 
 | Score | Static | Measured |
 |-------|--------|----------|
 | 0 | No linter, formatter or other mechanical check. | No such checks, or no violations caught. |
 | 5 | Tools are configured, but CI doesn't run them. | Catch rate above 0% and below 40%. |
 | 10 | CI runs a linter and formatter, plus a security scanner where the stack has one. | Catch rate at least 40%. |
-| 15 | | Catch rate at least 60%, and CI runs a security scanner where the stack has one. |
-| 20 | | Catch rate at least 85%, plus CI-enforced module boundary checks and performance budgets on key paths, each where it applies, and a rule or structural test for every convention corrected twice (optional). |
+| 15 | | Catch rate at least 60%, CI runs a security scanner where the stack has one, test isolation where it applies, and the checks that caught violations are required to merge (optional). |
+| 20 | | Catch rate at least 85%, plus CI-enforced module boundary checks and performance budgets on key paths, each where it applies, test isolation where it applies, a rule or structural test for every convention corrected twice (optional), and the checks that caught violations are required to merge (optional). |
+
+Whether reviews are required and whether a `CODEOWNERS` file exists are evidence only,
+and don't change the level. `CODEOWNERS` counts as evidence of review only if review
+is actually required.
 
 ## Score and verdict
 
