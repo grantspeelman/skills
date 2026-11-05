@@ -19,15 +19,16 @@ goal is vague or two wants conflict.
 
 ## Check what's written down first
 
-Before the opening statement, skim what's relevant and visible without asking:
-the request's wording, any repo docs (README, AGENTS.md or CLAUDE.md, roadmap,
-decision records, documented principles) and recent commits. Look for a stated
-goal this work naturally sits under.
+Before the opening statement, look for a stated goal this work serves. Start
+with the request's wording and anything you've already read or loaded this
+session. Then, in one step, read whichever of these likely bear on this request
+and you haven't covered yet: repo docs (README, AGENTS.md or CLAUDE.md, roadmap,
+decision records, documented principles) and recent commits.
 
-Don't ask what's written down; state it as a guess the user can correct, since
-docs can be stale or aspirational. A conflict with a documented goal or
-principle goes on the Frontier as a question. If no written goal fits, say so
-and give your best guess from the request; don't force a connection.
+State what you find as a guess the user can correct, since docs can be stale or
+aspirational. A conflict with a documented goal or principle goes on the
+Frontier as a question. If no written goal fits, say so and give your best guess
+from the request; don't force a connection.
 
 ## Start from a restatement
 
@@ -35,11 +36,11 @@ Open by stating the goal back in two or three sentences: the outcome, what
 success looks like, and the higher purpose you guess it serves. Mark anything
 you inferred rather than heard.
 
-Then state your assumptions. It's hard to list what you forgot to mention but
-easy to spot when someone has it wrong, so these are guesses informed by the
-evidence, not questions. Run through where unsaid context usually sits and
-state a concrete guess for any that could change the outcome, without repeating
-the purpose:
+Then state your assumptions as concrete guesses based on the evidence, not as
+questions. People spot a wrong guess more easily than they list what they forgot
+to say. Go through the kinds of context people usually leave unsaid and keep
+only the guesses that could change the outcome. On most tasks that leaves two
+or three:
 
 - **What it feeds into**: what happens with the result next, or what larger
   work it's part of.
@@ -49,37 +50,32 @@ the purpose:
 - **Why now**: what triggered it, such as an incident, a deadline or a request
   from someone.
 
-Skip any that wouldn't change it; on most tasks that leaves two or three.
-
 Point to your shakiest guess, the one that would cost the most if wrong, and
 say what you'd do differently. If no guess would change the outcome, say so and
 skip this.
 
 > I'm assuming this is a one-off for the migration and that speed matters more
-> than polish. The one-off part is my shakiest guess: if you'll keep using this,
+> than polish. The one-off part is my shakiest guess. If you'll keep using this,
 > I'd add tests and make the paths configurable. Correct me on anything that's
 > off.
 
-End with that invitation to correct. If other questions are open, send this
-with the first one and make the shaky guess that question, stated once. If
-nothing else is open, it goes in the single message described below.
+Within any one message, say each thing once. End the statement with that
+invitation to correct. If other questions are open, send the statement with the
+first one and make the shaky guess that question.
 
 If anything is still open after that, it's usually one of these:
 
-- **Done**: what does finished look like, who notices, and how would it be
-  judged?
+- **Done**: what does finished look like, and how would it be judged?
 - **Out of scope**: what is deliberately not part of this?
 - **Hard constraints**: a deadline, a budget, something that must not break.
 
 ### Asking about the purpose
 
-Climb to a higher purpose only if the answer could change the outcome; that's
-usually one or two levels, and at most two purpose questions. Skip them when
-the purpose is obvious or the task is small.
+Ask about a higher purpose only if the answer could change the outcome, and ask
+at most two purpose questions.
 
-When two purposes lead to different outcomes, ask a fork as a normal
-multiple-choice question: "If this is for X I'd build A, if it's for Y I'd
-build B."
+When two purposes lead to different outcomes, ask which one applies: "If this is
+for X I'd build A, if it's for Y I'd build B."
 
 ## Ask only what the user alone can answer and that changes the outcome
 
@@ -94,10 +90,9 @@ that consequence, not as the mechanism: "should a reviewer see every retry?",
 not "should retries get their own table?".
 
 Applied honestly, this leaves few questions, and sometimes none. A clear
-request still gets the opening statement, since a well-specified request is not
-evidence the purpose was shared; only the further questions can be skipped.
-With none to ask, send one message covering the opening statement and the
-read-back (see Done), saying each thing once, including who it's for.
+request still gets the opening statement, since a well-specified request doesn't
+show the user shared the purpose. With no questions to ask, send one message
+covering the statement and the read-back (see Done).
 
 Don't block on lookups: only the questions that depend on a running lookup
 wait for it. Keep going and fold the findings in when they land.
@@ -117,26 +112,25 @@ most likely to reshape the rest first.
 
 Don't hold the frontier in your head. Before the first question or read-back,
 create a ledger file outside the repo (the session scratchpad if there is one)
-and update it after every answer, before asking the next question. With no
-questions to ask, a few lines covering the goal, purpose and assumptions are
-enough:
+and update it after every answer, before asking the next question. Leave out any
+section with nothing in it:
 
 ```markdown
 # Alignment: <topic>
 
 ## Goal (draft)
-<the current restatement; rewrite it as answers change it>
+<the outcome and what success looks like; rewrite it as answers change it>
 
 ## Purpose
 <the higher purpose this serves> (guess or confirmed)
 
 ## Assumptions
-- Lifespan: one-off for the migration (guess)
-- Trade-off: speed over polish, corrected from polish first (confirmed)
+- Lifespan: one-off for the migration
 
 ## Settled
 - Q2 Audience: internal reviewers only, over customers too (user)
 - Q3 Retry visibility: every retry shown, over final result only (delegated)
+- Trade-off: speed over polish, corrected from polish first (user)
 
 ## Frontier
 - Q4 <question you can ask now>
@@ -150,11 +144,12 @@ enough:
 
 Every question lives in exactly one of Settled, Frontier or Waiting. When an
 answer lands, move it to Settled, then promote any Waiting question whose
-prerequisites are now met. An empty Frontier with an empty Waiting list means
-the questions are done. Record corrections in Assumptions. When a guess becomes
-a question, move it out of Assumptions; Settled holds the answer. Check Settled
-and Assumptions before asking anything, so you never re-ask a decision or a
-correction. Tell the user where the file is once, when you create it.
+prerequisites are now met. Assumptions holds only unconfirmed guesses. When the
+user confirms or corrects one, or it becomes a question, move it out; Settled
+holds the answer. When the user confirms or corrects the purpose, update the
+Purpose line and mark it confirmed. Check Settled before asking anything, so you
+never re-ask a decision. Tell the user where the file is once, when you create
+it.
 
 ### Asking a question
 
@@ -203,11 +198,10 @@ the frontier.
 
 ## Done
 
-You're done when the ledger's Frontier and Waiting lists are empty and every
-assumption that would change the outcome is confirmed, or named as unconfirmed
-in the read-back. The goal is to surface what the user already knows, not to
-anticipate every change of mind: changing it later, after seeing a concrete
-result, doesn't mean alignment failed.
+You're done when the ledger's Frontier and Waiting lists are empty; any guess
+left in Assumptions goes in the read-back as unconfirmed. The goal is to surface
+what the user already knows, not to anticipate every change of mind: changing it
+later, after seeing a concrete result, doesn't mean alignment failed.
 
 Close with a read-back built from the ledger, omitting empty sections:
 
@@ -222,11 +216,12 @@ Close with a read-back built from the ledger, omitting empty sections:
    each, so the user can pull one back if it matters to them.
 
 Get the user's explicit confirmation that this is the shared picture. Do not
-start the work until they confirm. Confirming the read-back settles anything it
-names as unconfirmed; mark those confirmed. Keep the ledger afterwards: it is
-the brief the work is checked against. Check the how decisions against its
-Purpose line. If a better route to the purpose would change the agreed outcome,
-stop and ask; if it wouldn't, take it and mention it in your summary.
+start the work until they confirm. Confirming the read-back settles the purpose
+and anything it names as unconfirmed; mark the purpose confirmed and move the
+rest to Settled. Keep the ledger afterwards: it is the brief the work is checked
+against. Check the how decisions against its Purpose line. If a better route to
+the purpose would change the agreed outcome, stop and ask; if it wouldn't, take
+it and mention it in your summary.
 
 ### Render the read-back visually when it earns it
 
