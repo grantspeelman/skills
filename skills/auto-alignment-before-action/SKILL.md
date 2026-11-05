@@ -32,10 +32,11 @@ you get certain without asking.
 
 ## The outcome check
 
-Before acting, silently answer these. Each answer must trace back to something
-the user said or a settled source: a `get-aligned` ledger for this work, a
-project file such as `CLAUDE.md`, or a decision already confirmed in this
-conversation. An answer you inferred doesn't count.
+Before acting, silently answer these. Trace each answer to something the user
+said or a settled source: a `get-aligned` ledger for this work, a project file
+such as `CLAUDE.md`, or a decision already confirmed in this conversation.
+Anything else is an inference. That includes a purpose drawn from a project
+file, which doesn't say why the user is asking now.
 
 1. **Goal:** why does the user want this, and what problem goes away?
 2. **Outcome:** what will exist or be different when you're done, and who
@@ -44,12 +45,11 @@ conversation. An answer you inferred doesn't count.
 4. **Constraints:** what rules, preferences or earlier decisions apply?
 5. **Done:** how will the user judge that it worked?
 
-Then ask: **if one of my assumptions is wrong, would the user see a different
-result than they expected?** If yes, it's a gap. If the assumption only
-changes how the work is done and the user would never notice, it isn't a gap:
-decide it.
+Then ask: **if an inference or assumption is wrong, would the user see a
+different result than they expected?** If yes, it's a gap. If it only changes
+how the work is done and the user would never notice, it isn't a gap: decide it.
 
-- **All five traced, no outcome-changing assumptions:** you're aligned. Go to
+- **No outcome-changing inferences or assumptions:** you're aligned. Go to
   *Acting*.
 - **Any gap:** close it first. When in doubt, it's a gap; the user asked for
   certainty, not a good guess.
@@ -59,20 +59,26 @@ decide it.
 Close what you can yourself first: read the files, search, check earlier
 decisions. Only what's left goes to the user.
 
-- **One small gap:** ask a single question in `get-aligned`'s question format,
-  then re-run the check.
-- **More than one gap, or anything expensive or hard to undo:** run a full
-  `get-aligned` session. Its ledger and the user's confirmed read-back become
-  the shared understanding you act on.
+- **One small gap, with or without a missing purpose:** ask a single question in
+  `get-aligned`'s question format, then re-run the check. For a missing purpose,
+  state your best guess and what you'd do differently if it's wrong, rather than
+  asking an open "why". Send the guess with that question. If nothing else is
+  open, let the *Acting* line carry the guess, followed by what you'd do
+  differently and the out clauses. One reply settles them all, so wait for it
+  before starting.
+- **More than one gap besides the purpose, or anything expensive or hard to
+  undo:** run a full `get-aligned` session. Its ledger and the user's confirmed
+  read-back become the shared understanding you act on.
 
 Never start the work while a question is outstanding.
 
 ## Acting
 
 Once aligned, open with **one line** naming the outcome you're about to
-produce and any point you're deciding on the user's behalf. For example:
-"Adding an RSS feed for the blog, feed only, no sitemap yet." That line is the
-user's last cheap chance to stop you, so make it specific, not "on it".
+produce, the purpose you take it to serve, and any point you're deciding on the
+user's behalf. For example: "Adding an RSS feed for the blog so readers can
+follow new posts, feed only, no sitemap yet." That line is the user's last cheap
+chance to stop you, so make it specific, not "on it".
 
 ### Out clauses
 
@@ -121,14 +127,16 @@ Once the work has started, keep going. Stop in two cases only:
 
 Record either decision in the ledger if there is one. Everything else is yours
 to decide as you go: new implementation choices, problems the out clauses say
-you can fix, a plan that needs reworking to reach the same outcome.
+you can fix, a plan that needs reworking to reach the same outcome (if you take
+a better route to the purpose, mention it in your summary).
 
 ## Don't over-ask
 
 - **Settled is settled.** Never re-ask what the user decided or what a ledger
   or project file already answers.
 - **Small, reversible changes the user asked for directly** (fix this typo,
-  rename this variable) are aligned by definition. Say the one line and do it.
+  rename this variable) are aligned by definition. Say the one line, without a
+  purpose, and do it.
 - **"Just do it" or "whatever you think"** settles open points with your
   recommendation. Name them as delegated in your opening line, and in the
   ledger if there is one.

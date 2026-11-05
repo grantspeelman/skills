@@ -3,7 +3,8 @@ name: get-aligned
 description: >-
   Interview the user until you both agree on the goal and outcome of a task,
   leaving how it gets built to you. Use before starting work whose intent is
-  ambiguous, or when the user says "get aligned", "let's align", "make sure
+  ambiguous, or substantial work where different unstated purposes would change
+  the result, or when the user says "get aligned", "let's align", "make sure
   we're on the same page", "check what I actually want", or "ask me questions
   before you start". Not for stress-testing a plan's mechanics.
 ---
@@ -16,19 +17,65 @@ how you would both know it worked. How to build it is yours to decide
 afterwards. The tone is collaborative, not adversarial, but push back when the
 goal is vague or two wants conflict.
 
+## Check what's written down first
+
+Before the opening statement, look for a stated goal this work serves. Start
+with the request's wording and anything you've already read or loaded this
+session. Then, in one step, read whichever of these likely bear on this request
+and you haven't covered yet: repo docs (README, AGENTS.md or CLAUDE.md, roadmap,
+decision records, documented principles) and recent commits.
+
+State what you find as a guess the user can correct, since docs can be stale or
+aspirational. A conflict with a documented goal or principle goes on the
+Frontier as a question. If no written goal fits, say so and give your best guess
+from the request; don't force a connection.
+
 ## Start from a restatement
 
-Open by stating the goal back in two or three sentences: the outcome, who it is
-for, and what success looks like. Mark anything you inferred rather than heard.
-The first questions test that statement.
+Open by stating the goal back in two or three sentences: the outcome, what
+success looks like, and the higher purpose you guess it serves. Mark anything
+you inferred rather than heard.
 
-The questions that matter most are almost always these:
+Then state your assumptions as concrete guesses based on the evidence, not as
+questions. People spot a wrong guess more easily than they list what they forgot
+to say. Go through the kinds of context people usually leave unsaid and keep
+only the guesses that could change the outcome. On most tasks that leaves two
+or three:
 
-- **Why** is this worth doing? What problem goes away?
-- **Who** notices when it's done, and what do they see?
+- **What it feeds into**: what happens with the result next, or what larger
+  work it's part of.
+- **Who it's for**: who actually uses or sees it.
+- **How long it lasts**: a throwaway or something to maintain.
+- **What wins in a trade-off**: speed, polish or safety, for example.
+- **Why now**: what triggered it, such as an incident, a deadline or a request
+  from someone.
+
+Point to your shakiest guess, the one that would cost the most if wrong, and
+say what you'd do differently. If no guess would change the outcome, say so and
+skip this.
+
+> I'm assuming this is a one-off for the migration and that speed matters more
+> than polish. The one-off part is my shakiest guess. If you'll keep using this,
+> I'd add tests and make the paths configurable. Correct me on anything that's
+> off.
+
+Within any one message, say each thing once. End the statement with that
+invitation to correct. If other questions are open, send the statement with the
+first one and make the shaky guess that question.
+
+If anything is still open after that, it's usually one of these:
+
 - **Done**: what does finished look like, and how would it be judged?
 - **Out of scope**: what is deliberately not part of this?
 - **Hard constraints**: a deadline, a budget, something that must not break.
+
+### Asking about the purpose
+
+Ask about a higher purpose only if the answer could change the outcome, and ask
+at most two purpose questions.
+
+When two purposes lead to different outcomes, ask which one applies: "If this is
+for X I'd build A, if it's for Y I'd build B."
 
 ## Ask only what the user alone can answer and that changes the outcome
 
@@ -42,8 +89,10 @@ behaviour someone notices, scope, cost, risk, time, or reversibility. Ask it as
 that consequence, not as the mechanism: "should a reviewer see every retry?",
 not "should retries get their own table?".
 
-Applied honestly, this leaves few questions, and sometimes none. If the request
-already answers everything, go straight to the read-back.
+Applied honestly, this leaves few questions, and sometimes none. A clear
+request still gets the opening statement, since a well-specified request doesn't
+show the user shared the purpose. With no questions to ask, send one message
+covering the statement and the read-back (see Done).
 
 Don't block on lookups: only the questions that depend on a running lookup
 wait for it. Keep going and fold the findings in when they land.
@@ -61,19 +110,27 @@ most likely to reshape the rest first.
 
 ### Keep the state in a ledger file
 
-Don't hold the frontier in your head. Before the first question, create a
-ledger file outside the repo (the session scratchpad if there is one) and
-update it after every answer, before asking the next question:
+Don't hold the frontier in your head. Before the first question or read-back,
+create a ledger file outside the repo (the session scratchpad if there is one)
+and update it after every answer, before asking the next question. Leave out any
+section with nothing in it:
 
 ```markdown
 # Alignment: <topic>
 
 ## Goal (draft)
-<the current restatement; rewrite it as answers change it>
+<the outcome and what success looks like; rewrite it as answers change it>
+
+## Purpose
+<the higher purpose this serves> (guess or confirmed)
+
+## Assumptions
+- Lifespan: one-off for the migration
 
 ## Settled
 - Q2 Audience: internal reviewers only, over customers too (user)
 - Q3 Retry visibility: every retry shown, over final result only (delegated)
+- Trade-off: speed over polish, corrected from polish first (user)
 
 ## Frontier
 - Q4 <question you can ask now>
@@ -87,9 +144,12 @@ update it after every answer, before asking the next question:
 
 Every question lives in exactly one of Settled, Frontier or Waiting. When an
 answer lands, move it to Settled, then promote any Waiting question whose
-prerequisites are now met. An empty Frontier with an empty Waiting list means
-you're done. Check Settled before asking anything, so you never re-ask a
-decision. Tell the user where the file is once, when you create it.
+prerequisites are now met. Assumptions holds only unconfirmed guesses. When the
+user confirms or corrects one, or it becomes a question, move it out; Settled
+holds the answer. When the user confirms or corrects the purpose, update the
+Purpose line and mark it confirmed. Check Settled before asking anything, so you
+never re-ask a decision. Tell the user where the file is once, when you create
+it.
 
 ### Asking a question
 
@@ -138,21 +198,30 @@ the frontier.
 
 ## Done
 
-You're done when the ledger's Frontier and Waiting lists are empty and nothing
-that would change the outcome is silently assumed. Close with a read-back built
-from the ledger:
+You're done when the ledger's Frontier and Waiting lists are empty; any guess
+left in Assumptions goes in the read-back as unconfirmed. The goal is to surface
+what the user already knows, not to anticipate every change of mind: changing it
+later, after seeing a concrete result, doesn't mean alignment failed.
 
-1. **Goal and outcome**, in two or three sentences.
-2. **Success criteria**: how you'll both know it worked.
-3. **Out of scope** and **hard constraints**.
-4. **Settled decisions**, each with what it was chosen over. Flag the delegated
+Close with a read-back built from the ledger, omitting empty sections:
+
+1. **Goal and outcome**, including who it's for.
+2. **Purpose**, and any assumption still unconfirmed: "Unconfirmed: X.
+   Confirming this means going ahead on X."
+3. **Success criteria**: how you'll both know it worked.
+4. **Out of scope** and **hard constraints**.
+5. **Settled decisions**, each with what it was chosen over. Flag the delegated
    ones.
-5. **Left to me**: the main how decisions you'll make without asking, a line
+6. **Left to me**: the main how decisions you'll make without asking, a line
    each, so the user can pull one back if it matters to them.
 
 Get the user's explicit confirmation that this is the shared picture. Do not
-start the work until they confirm. Keep the ledger afterwards: it is the brief
-the work is checked against.
+start the work until they confirm. Confirming the read-back settles the purpose
+and anything it names as unconfirmed; mark the purpose confirmed and move the
+rest to Settled. Keep the ledger afterwards: it is the brief the work is checked
+against. Check the how decisions against its Purpose line. If a better route to
+the purpose would change the agreed outcome, stop and ask; if it wouldn't, take
+it and mention it in your summary.
 
 ### Render the read-back visually when it earns it
 
