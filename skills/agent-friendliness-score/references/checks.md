@@ -130,8 +130,8 @@ Fewer than 5 valid bugs that ran means seeded bugs are "not measured".
   nothing, so Verification is 0.
 - **Setup needs something the docs don't mention:** that's a measured Feedback speed
   failure. Mark seeded bugs "not measured".
-- **The docs are right and this machine lacks it,** such as a toolchain or a secret
-  you can't copy: mark the affected checks "not measured", and say what was missing.
+- **The docs are right and this machine lacks it,** such as a toolchain: mark the
+  affected checks "not measured", and say what was missing.
   The same goes for a hook installer refusing because this machine sets a global
   `core.hooksPath`.
 
