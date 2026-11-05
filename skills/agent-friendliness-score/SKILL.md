@@ -79,8 +79,13 @@ mistakes and a damaged state file, nothing stronger.
   Guardrails finding, labelled static, so name it in the plan. A clearly local
   default, such as Postgres from the repo's compose file, passes with no question,
   and [references/scoring.md](references/scoring.md) covers a service with no default.
-  If you can't tell whether a service is shared, ask rather than assume. Test
-  isolation then has one of three results:
+  With no default, the score comes from
+  [references/scoring.md](references/scoring.md), whatever the user answers. To run,
+  never inherit a value: name the variable in the plan, and pass a safe value from the
+  user with `sandbox run -- env NAME=value`, or clear it with `env -u NAME`. With no
+  safe value, mark the affected checks not measured. If you can't tell whether a
+  service is shared, ask rather than assume. Test isolation then has one of three
+  results:
   - The user confirms nothing reaches production or shared services: it passes.
   - They're reached under the default the repo's config or docs set: it fails, even
     if the user supplies a safe target for this run.
@@ -121,9 +126,9 @@ read preflight's output. Delete only a `leftover_clone` folder, named
 state file records it. Then remove the state file it names. If no `leftover_clone`
 is listed, remove the state file only and leave any folder alone.
 
-Find the stack, CI's test, lint and typecheck commands, and how the repo documents
-its setup. Note whether the working tree has uncommitted changes, because only the
-commit gets scored.
+Find the stack, CI's test, lint and typecheck commands, how the repo documents its
+setup, and any hooks the documented setup installs. Note whether the working tree has
+uncommitted changes, because only the commit gets scored.
 
 Look for services the tests may touch: Docker Compose files, database and queue
 config, required environment variables, and HTTP calls without a stub library. This
@@ -158,7 +163,8 @@ Credentials:  unset by name for test runs: AWS_SECRET_ACCESS_KEY, GH_TOKEN
 Seeded:       10 bugs, plus 5 planted convention violations
 Agents:       3 fresh agents, one for the bugs and two for the docs check
 Other:        npx jscpd for duplication; read-only gh calls for CI history and
-              merge rules
+              merge rules; documented pre-commit hook, for violations the commands
+              miss
 Access:       save folder ok, temp ok, network ok, gh ok
 Budget:       unknown until the first test run. Stops at 60 minutes.
 Saved to:     ~/.agent-friendliness-score/payments-api-1a2b3c4d/ (full results)

@@ -163,9 +163,9 @@ Check these, each where it applies:
 
 During install, note any tool it needed that the repo doesn't pin, and save these for
 `result.json`. Any such tool fails the requirement, even one this machine happened to
-have. These everyday system tools don't need pinning: `git`, `make`, `curl`, a shell,
-a C compiler and Docker. Anything else does. Label the files static and the install
-notes measured.
+have. These everyday system tools don't need pinning: `git`, `make`, `curl`, a shell
+and its standard utilities, a C compiler and Docker. Anything else does. Tools bundled
+with a pinned tool are covered. Label the files static and the install notes measured.
 
 ## Planted violations (Guardrails)
 
@@ -183,7 +183,7 @@ Plant 5 violations, picking from these where they apply:
 For each, edit the clone, run `sandbox capture violations/<NN>-<type>.patch`, then
 apply it and run the commands as CI runs them. If the commands don't catch a violation
 and a documented hook runs a check for it, run that hook in the clone with
-`sandbox run`, and list it in the plan. If a scanner or hook reads staged files,
+`sandbox run`, as the plan lists. If a scanner or hook reads staged files,
 staging in the clone is fine. Then restore. On a rerun, reuse the earlier patches
 that still apply, and top up to 5.
 
