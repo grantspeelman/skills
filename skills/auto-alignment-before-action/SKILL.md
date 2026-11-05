@@ -35,9 +35,12 @@ you get certain without asking.
 Before acting, silently answer these. Each answer must trace back to something
 the user said or a settled source: a `get-aligned` ledger for this work, a
 project file such as `CLAUDE.md`, or a decision already confirmed in this
-conversation. An answer you inferred doesn't count.
+conversation. An answer you inferred doesn't count, except where check 1 says
+so. A project file can settle any of these except purpose: a purpose taken from
+one still gets confirmed.
 
-1. **Goal:** why does the user want this, and what problem goes away?
+1. **Goal:** why does the user want this, and what problem goes away? If no
+   plausible purpose would change the result, an inferred answer is enough.
 2. **Outcome:** what will exist or be different when you're done, and who
    notices?
 3. **Scope:** what's in, and what's explicitly out?
@@ -59,8 +62,12 @@ decide it.
 Close what you can yourself first: read the files, search, check earlier
 decisions. Only what's left goes to the user.
 
-- **One small gap:** ask a single question in `get-aligned`'s question format,
-  then re-run the check.
+- **A missing purpose that could change the result** (small direct changes
+  under *Don't over-ask* are exempt): state your best guess in a sentence and
+  what you'd do differently if it's wrong, rather than asking an open "why".
+  Get it confirmed or corrected, then re-run the check.
+- **Any other small gap:** ask a single question in `get-aligned`'s question
+  format, then re-run the check.
 - **More than one gap, or anything expensive or hard to undo:** run a full
   `get-aligned` session. Its ledger and the user's confirmed read-back become
   the shared understanding you act on.
@@ -121,7 +128,8 @@ Once the work has started, keep going. Stop in two cases only:
 
 Record either decision in the ledger if there is one. Everything else is yours
 to decide as you go: new implementation choices, problems the out clauses say
-you can fix, a plan that needs reworking to reach the same outcome.
+you can fix, a plan that needs reworking to reach the same outcome, a better
+route to the purpose that keeps the agreed outcome (mention it in your summary).
 
 ## Don't over-ask
 
