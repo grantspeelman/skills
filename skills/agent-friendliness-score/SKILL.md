@@ -54,12 +54,16 @@ mistakes and a damaged state file, nothing stronger.
 | `sandbox apply <patch>` | Applies a patch to the clone. |
 | `sandbox capture <path>` | Saves the clone's changes as a patch in the save folder, then restores. |
 | `sandbox restore` | Runs `git reset --hard HEAD` and `git clean -ffd` in the clone, with hooks off. |
-| `sandbox finish [--complete]` | Removes the clone, checks it's gone, and compares the scored repo with its state at setup. |
+| `sandbox find-report-folder [scope]` | Looks for `docs/` then `doc/`, and prints what it found. |
+| `sandbox check-report-folder <folder>` | Checks the folder is inside the scored repo, with no `..` and no symlink leading out. |
+| `sandbox finish [--complete [--report-to <folder>]]` | Removes the clone, checks it's gone, compares the scored repo with its state at setup, and then copies the report to the folder. |
 
 ## Rules for the whole run
 
-- Never push, open a pull request, or change the scored repo's working tree,
-  index, branches or config. All edits happen in the clone, which has no remote.
+- Never push, open a pull request, or change the scored repo's index, branches or
+  config. All edits happen in the clone, which has no remote. The only write to the
+  scored checkout is one report file, in the folder the user chose, written by
+  `sandbox finish`. Never stage or commit it, and don't edit `.gitignore`.
 - Don't commit seeded changes. Apply, test, restore.
 - From CI, run only test, lint and typecheck steps. Never run release, deploy,
   publish, terraform or upload steps, even if a test step depends on them.
@@ -72,9 +76,14 @@ mistakes and a damaged state file, nothing stronger.
 - If tests appear to reach production or shared services, stop and ask before
   running anything. Do the same if a run does something the plan didn't cover.
 - Never guess a result. A check that could not run is "not measured".
-- Reports go only in the save folder, never in the scored repo. Paraphrase code
-  and review comments where you can, because reports may quote private code. If
-  you see a secret, don't repeat it.
+- The full report, `result.json`, patches and state stay in the save folder, which
+  is always outside the scored repo. Paraphrase code and review comments where you
+  can, because reports may quote private code. If you see a secret, don't repeat it.
+- Earlier reports can bias a run, because they can list which seeded bugs survived.
+  Don't read a file named like `agent-friendliness-report-20261103T155624Z.md` in the
+  repo, and don't count one as documentation or evidence. If one was read, by you or
+  a subagent, say so in the report and `result.json`, the same way as a test that was
+  read.
 - Run `gh` from the scored repo, because the clone has no remote.
 
 ## 1. Read the repo
@@ -101,6 +110,9 @@ commit gets scored.
 
 Look for services the tests may touch: Docker Compose files, database and queue
 config, required environment variables, and HTTP calls without a stub library.
+
+Run `sandbox find-report-folder`, passing the package path if there is one, for the
+plan's report location.
 
 **Don't read test files yet.** You may list their paths and read test config. To
 find service connections in test files, search so that only connection details
@@ -129,8 +141,21 @@ Agents:       3 fresh agents, one for the bugs and two for the docs check
 Other:        npx jscpd for duplication; read-only gh calls for CI history
 Access:       save folder ok, temp ok, network ok, gh ok
 Budget:       unknown until the first test run. Stops at 60 minutes.
-Saved to:     ~/.agent-friendliness-score/payments-api-1a2b3c4d/ (may quote code)
+Saved to:     ~/.agent-friendliness-score/payments-api-1a2b3c4d/ (full results)
+Report copy:  where should the report go?
+              1. docs/ (recommended)
+              2. another folder in this repo
+              3. home folder only
+              Name: agent-friendliness-report-<timestamp>.md. It's untracked, and
+              this skill won't stage or commit it. It can quote private code and
+              describe where tests are weak, so check it before committing, more
+              so on a public repo.
 ```
+
+The report location is part of this one confirmation, not a separate prompt. Offer
+the detected folder first, as recommended. If none was found, offer the repo root
+first instead. Don't create a folder the user didn't choose. Check any other path
+with `sandbox check-report-folder`, and ask again if it's refused.
 
 Estimate time from CI history when you can, otherwise say "unknown". The budget is
 the limit, and [references/checks.md](references/checks.md) says how to stay inside
@@ -238,17 +263,26 @@ show the total as measured points, such as `45/60 measured`.
 
 If `previous_run` is set, compare against it. It's the newest run that finished.
 
-Save these in `save_dir`, alongside the patches and context files from step 4:
+Save these in `save_dir`, alongside the patches and context files from step 4. They
+are what reruns compare against:
 
 - `report.md`: the report above.
 - `result.json`: commit, date, scores, whether each category is measured, raw
   metrics, who wrote the bugs, the result for each patch, and the exact commands
   and searches used, so the next run can compare and repeat them.
 
-Then run `sandbox finish --complete`. If the run stops early, run `sandbox finish`,
-which leaves the run out of later comparisons. Stop any services you started first.
+Then run `sandbox finish --complete --report-to <folder>`, or leave out `--report-to`
+if the user chose the home folder only. This compares the scored repo first and
+copies the report afterwards, so the copy doesn't count as a change. If the run stops
+early, run `sandbox finish`, which leaves the run out of later comparisons and copies
+nothing. Stop any services you started first.
 
 `finish` exits 4 if the scored repo changed since setup, and writes what changed
 to `scored-repo-diff.txt`. Tell the user, since it may be their own work. If it
-can't remove the clone it prints the path, so pass that on. Finish by telling the
-user where the report is, and that it may quote private code.
+can't remove the clone it prints the path, so pass that on. If the copy fails, it
+exits 5 and the report is still in `save_dir`. On exit 5, also read the `scored_repo`
+line, because exit 5 hides the exit 4 for a changed repo.
+
+Finish by giving the user the `report_copy` path, or the `save_dir` report if there's
+no copy. Say the copy is untracked, that it can quote private code and describe where
+tests are weak, and to check it before committing, more so on a public repo.

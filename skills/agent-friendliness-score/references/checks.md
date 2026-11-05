@@ -37,7 +37,7 @@ fit the suite. First list:
   plus anything else the repo uses.
 - **Hotspots**, the production files most changed in the last 6 months, from
   `git log --since='6 months ago' --name-only --format= | sort | uniq -c | sort -rn`,
-  without the test paths. If history is shallow, use the largest production files.
+  without the test paths or earlier reports. If history is shallow, use the largest production files.
 
 On a rerun, read only the earlier patches at this stage, not the earlier report.
 Starting from the highest numbered, test patches with `sandbox apply` and
@@ -54,7 +54,9 @@ Write <N> bugs for a test of this repository's safety checks. The code is in
 Don't open these test paths, and don't use git history to see them: <test paths>
 Inline tests count as tests. In Rust, stop reading a file at #[cfg(test)], for
 example with awk '/#\[cfg\(test\)\]/{exit}1' <file>. Ignore doctests, Python >>>
-examples and in-source test blocks. If you read one anyway, say which file.
+examples and in-source test blocks. Don't open files named
+like agent-friendliness-report-20261103T155624Z.md, or see them through git history, because they are
+earlier results of this test. If you read any of these anyway, say which file.
 
 Choose sites from these often-changed files first: <hotspots>
 Don't repeat these existing bugs: <reused patch paths, or none>
@@ -84,7 +86,8 @@ which tests ran or failed. Delete the replaced patch.
 **No subagent on this host?** Show the user the prompt and ask them to run it in a
 new session. If they would rather not, write the bugs yourself with the same rules.
 The report and `result.json` must then say this session wrote them, and whether it
-had read any tests by then. Do the same if the subagent read a test.
+had read any tests or earlier reports by then. Do the same if the subagent read a
+test or an earlier report.
 
 ### Running them
 
@@ -113,6 +116,9 @@ Fewer than 5 valid bugs that ran means seeded bugs are "not measured".
 
 ### When the baseline fails
 
+- **`sandbox settle` printed `earlier_reports_removed_from_clone`, and only a link
+  checker or similar fails on those files:** that comes from this run removing them, so it
+  isn't the repo's failure. Leave that failure out of the score.
 - **Tests fail after following the repo's documented setup:** score it. Compare
   seeded runs against the baseline's failures. A suite where nothing passes catches
   nothing, so Verification is 0.
@@ -173,6 +179,11 @@ to run it in a new session and paste the answer back. If they would rather not,
 mark the check "not measured". Never answer these prompts yourself, because you've
 already read the repo.
 
+`sandbox settle` removes committed reports, named like
+`agent-friendliness-report-20261103T155624Z.md`, from the clone,
+but git history can still show them. If an agent says it read one, disclose it the
+same way as a test that was read.
+
 **Repo questions.** Write 6 questions an agent starting a task here would need
 answered, with an answer key you checked against the code. For example: which
 command proves a change to a given area works, where a given rule is enforced,
@@ -182,9 +193,10 @@ changed. Give the agent only this:
 
 ```text
 Answer these questions about the repository at <sandbox>, using only what is in
-that repository. Don't use the web. Don't run the tests. If the repository doesn't
-answer a question, say so rather than guessing. For each answer, list the files
-you opened.
+that repository. Don't use the web. Don't run the tests. Don't open files named
+like agent-friendliness-report-20261103T155624Z.md, or see them through git history. If you read one
+anyway, say which file. If the repository doesn't answer a question, say so rather
+than guessing. For each answer, list the files you opened.
 
 <questions>
 ```
@@ -195,11 +207,12 @@ Score correct answers against the key, and record how many files each one took.
 
 ```text
 Read only the test files in the repository at <sandbox>. Don't open production code
-or docs. Write down the business rules these tests imply, one per line, with the
-test file each rule came from.
+or docs. Don't open files named like agent-friendliness-report-20261103T155624Z.md, or see them through git
+history. If you read one anyway, say which file. Write down the business rules these
+tests imply, one per line, with the test file each rule came from.
 ```
 
-Compare the list with the docs, plus GitHub issues if `gh` can reach them. Rules
+Compare the list with the docs, leaving out earlier reports, plus GitHub issues if `gh` can reach them. Rules
 match is the share of written rules the docs confirm. List documented rules no test
 implies, since these are gaps for the top fixes. If the repo has no tests, this
 check is N/A.

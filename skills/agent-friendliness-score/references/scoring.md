@@ -14,6 +14,11 @@ looks better.
 A category is **static only** if none of its measured checks ran. Use the Static
 clauses, which stop at 10. Static means a file exists or a tool is configured.
 
+A committed report named like `agent-friendliness-report-20261103T155624Z.md` is a past result of this
+skill. It never counts as documentation or evidence in any category. A repo's own
+file with a similar name, such as `agent-friendliness-report-guide.md`, counts as
+usual.
+
 To pick the level:
 
 1. If level 0's condition holds, score 0.
