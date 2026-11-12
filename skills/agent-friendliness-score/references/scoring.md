@@ -164,18 +164,52 @@ production lines in paths the coverage config ignores. Save the searches for rer
 Exclusions usually point to code that's hard to test, and they're the quickest way
 for an agent to pass a gate.
 
+A **type checker** counts when CI runs it and fails the build on an error, such as
+`tsc --noEmit`, mypy, pyright, Sorbet or PHPStan. A TypeScript build through esbuild,
+swc, Vite or Babel, or tests through Vitest or ts-jest with `isolatedModules`, don't
+type-check, so they don't count. It's **strict** when the stack's strict setting is
+the default for production code, such as TypeScript `strict`, mypy `--strict` or
+pyright `strict` mode, and files or modules opted out or checked loosely hold under
+10% of production lines. For Sorbet the bar is `typed: strict`, by share of lines.
+Compiled languages with static types, such as Go, Rust, Java or C#, meet both through
+their compiler when CI builds the code.
+
+Type requirements apply where the stack has a practical type checker, whether or not
+the repo configures one. Practical means maintained, and able to check the repo's
+existing code without rewriting it. So a Python repo needs one, such as mypy or
+pyright, Ruby such as Sorbet, and plain JavaScript through TypeScript with `checkJs`
+or JSDoc. They're N/A for shell, SQL, config or docs only. In a mixed repo, apply them
+per production language. The suppression requirement applies where the language can
+hide a type error, as the planted violations in [checks.md](checks.md) list, so it's
+N/A for Rust.
+
+Record as static evidence the type checker, whether CI fails on it, and its
+strictness, with the share of production lines opted out or checked loosely, such as
+by a Sorbet sigil below `strict` or a mypy per-module override. Also record escape
+hatches per 1,000 lines of production code, leaving out generated, vendored and test
+code: `any`, non-null `!`, `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`,
+`# type: ignore`, file-level opt-outs such as `# mypy: ignore-errors` or
+`# pyright: basic`, `cast()` and `T.unsafe`, or the stack's equivalents. Leave out
+Go's `interface{}` and `any`, which are often idiomatic. Save the searches for reruns.
+Like exclusions, they let an agent silence a check instead of fixing the cause.
+
 | Grade | Static | Measured |
 |-------|--------|----------|
 | F | No linter, formatter or other mechanical check. | No such checks, or no violations caught. |
 | D | Tools are configured, but CI doesn't run them. | Catch rate above 0% and below 40%. |
-| C | CI runs a linter and formatter, plus a security scanner where the stack has one. | Catch rate at least 40%. |
-| B | | Catch rate at least 60%, CI runs a security scanner where the stack has one, test isolation where it applies, a coverage gate, and the checks that caught violations are required to merge (optional). |
-| A | | Catch rate at least 85%, plus CI-enforced module boundary checks and performance budgets on key paths, each where it applies, test isolation where it applies, a coverage gate at 95% or more, every excluded untested branch caught where it applies (for example by a lint rule or a check on coverage config), a rule or structural test for every convention corrected twice (optional), and the checks that caught violations are required to merge (optional). |
+| C | CI runs a linter and formatter, plus a security scanner and a type checker, each where the stack has one. | Catch rate at least 40%, and CI runs a type checker where the stack has one. |
+| B | | Catch rate at least 60%, CI runs a security scanner where the stack has one, test isolation where it applies, a coverage gate, a strict type checker where the stack has one, and the checks that caught violations are required to merge (optional). |
+| A | | Catch rate at least 85%, plus CI-enforced module boundary checks and performance budgets on key paths, each where it applies, test isolation where it applies, a coverage gate at 95% or more, every excluded untested branch caught where it applies (for example by a lint rule or a check on coverage config), a strict type checker where the stack has one, every suppressed type error caught where it applies, a rule or structural test for every convention corrected twice (optional), and the checks that caught violations are required to merge (optional). |
 
 **Coverage fix.** When there's no coverage gate, or it's below 95%, suggest a
 branch-coverage gate on changed code at 95% or more, not a higher overall threshold.
 It moves the untested-branch catch and the Guardrails grade, such as "Guardrails C to
 B".
+
+**Type-check fix.** When CI runs no type checker, or it isn't strict, name the checker
+and setting for this stack, such as "turn on `strict` in tsconfig.json" or "add
+`mypy --strict` to CI". It can move the type-error catch, and moves the Guardrails
+grade, such as "Guardrails D to C" for a new checker or "C to B" for strict.
 
 Whether reviews are required and whether a `CODEOWNERS` file exists are evidence only,
 and don't change the grade. `CODEOWNERS` counts as evidence of review only if review

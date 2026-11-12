@@ -131,8 +131,9 @@ is listed, remove the state file only and leave any folder alone.
 Find the stack, CI's test, lint and typecheck commands, how the repo documents its
 setup, and any hooks the documented setup installs. Note the coverage tool and its
 config: whether branch coverage is on, the threshold, whether CI fails on it, and
-whether it applies overall or to changed code. Note whether the working tree has
-uncommitted changes, because only the commit gets scored.
+whether it applies overall or to changed code. Note the type checker, whether it's
+strict and whether CI fails on it. Note whether the working tree has uncommitted
+changes, because only the commit gets scored.
 
 Look for services the tests may touch: Docker Compose files, database and queue
 config, required environment variables, and HTTP calls without a stub library. This
@@ -156,7 +157,8 @@ Show one plan and wait for one confirmation:
 
 ```text
 Repo:         payments-api at 4f2a91c (uncommitted changes are not scored)
-Commands:     bin/test, bin/lint, from CI. Skipped: deploy, publish-gem.
+Commands:     bin/test, bin/lint, bin/typecheck, from CI. Skipped: deploy,
+              publish-gem.
 Install:      bundle install in a throwaway clone (runs install scripts)
 Services:     Postgres from docker-compose.yml. No external URLs found.
 Local data:   tests write to the local database payments_test
@@ -164,7 +166,8 @@ Credentials:  unset by name for test runs: AWS_SECRET_ACCESS_KEY, GH_TOKEN
               kept for install only: none
               tests can read these: ~/.aws, ~/.netrc
               This goes by name and path, so it can miss some.
-Seeded:       10 bugs, plus 10 planted violations, two of them untested code
+Seeded:       10 bugs, plus 10 planted violations, including untested code and
+              type errors
 Agents:       3 fresh agents, one for the bugs and two for the docs check
 Other:        npx jscpd for duplication; diff-cover for the changed-code coverage
               gate; read-only gh calls for CI history and merge rules; documented
@@ -239,7 +242,7 @@ That's a measured result, an F for Verification.
 
 Now read the tests, and any earlier report for this repo. Collect the static
 evidence each category in [references/scoring.md](references/scoring.md) asks for,
-including the count of coverage exclusions.
+including the counts of coverage exclusions and type-check escape hatches.
 
 ## 6. Grade
 
@@ -255,8 +258,8 @@ these ten patches" only games the rerun, so don't suggest it. A gap in this run'
 measurement isn't a fix either, so "install jscpd" or "move to GitHub Actions"
 can't rank. List those gaps as ceilings in the evidence. A fix must also pass the
 evidence filter in [references/scoring.md](references/scoring.md), and, when a
-coverage fix ranks, use the form scoring.md gives. Don't apply any fix. This skill
-only reports.
+coverage or type-check fix ranks, use the form scoring.md gives. Don't apply any
+fix. This skill only reports.
 
 ## 8. Report, save and clean up
 

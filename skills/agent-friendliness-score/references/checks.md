@@ -189,11 +189,32 @@ Plant 10 violations. Required types go in wherever they apply:
 - **excluded untested branch:** the same, hidden behind a coverage exclusion, such as
   `# pragma: no cover` or `/* istanbul ignore next */`. Applies like the untested
   branch, where the tool has an exclusion mechanism.
+- **type error:** a call with an argument of the wrong type, or a missing or
+  misspelled field, in production code. Applies where the stack has a type checker,
+  whether or not the repo configures it.
+- **suppressed type error:** the same, hidden behind a suppression, such as
+  `@ts-expect-error`, `# type: ignore[<code>]` or a cast through `any`: `any(x).(T)`
+  in Go, `(T)(Object) x` in Java, `(T)(object) x` or `dynamic` in C#. Use the most
+  permissive form the repo's own rules accept, such as `@ts-expect-error` with a
+  description, because a rule an agent can satisfy without fixing the type doesn't
+  count. Applies like the type error, where the language can hide a type error, so
+  not Rust.
 
-Write the required types so they pass lint, formatting, type checks and the existing
-tests, apart from any check on coverage or exclusions themselves. Where the run
-produces a coverage report, confirm from it that the branch really is uncovered, and
-that the tool honours the exclusion form used. If not, replace the patch.
+Write each required type so only the check it targets can fail:
+
+- The coverage types pass lint, formatting, type checks and the existing tests. Only
+  a check on coverage or the exclusion may fail.
+- The type error passes lint and formatting, apart from lint rules on types. A type
+  check or test failing on it is a catch, not a reason to replace it.
+- The suppressed type error passes everything, the type checker and tests included.
+  Only a check on the suppression may fail. Pick a site where the wrong type doesn't
+  break the existing tests, such as a path they don't reach, or a mismatch that
+  doesn't crash. If a test fails, replace the patch.
+
+Where the run produces a coverage report, confirm from it that the branch really is
+uncovered, and that the tool honours the exclusion form used. Where the repo
+configures a type checker, confirm it reports the type error, and passes once the
+suppression is added. If not, replace the patch.
 
 Fill the rest from these, each where it applies. Include a breach of a documented
 convention whenever the repo documents conventions:
@@ -248,6 +269,17 @@ baseline fails". An excluded untested branch counts as caught only if something 
 because of the exclusion, such as a lint rule banning new exclusion comments or a
 check on changes to coverage config. A coverage gate that passes because the code is
 excluded misses it.
+
+**Type errors.** A type error counts as caught if a check in the commands, or a
+documented hook, fails on it. Record which: a type checker, the compiler, a lint rule
+on types, or a test failing at runtime. A test failure is a genuine catch, but the
+report says the tests caught it, not a type checker. A coverage gate failing on a
+type error isn't a catch. A type checker that already fails on the baseline catches
+nothing, like a red coverage gate, unless it uses a baseline file of known errors and
+fails only on new ones. A suppressed type error counts as caught only if something
+fails because of the suppression, such as `@typescript-eslint/ban-ts-comment`,
+`no-explicit-any`, golangci-lint `forcetypeassert` or a Semgrep rule. A type checker
+that passes because of the suppression misses it.
 
 ## Fresh-agent checks (Context)
 
