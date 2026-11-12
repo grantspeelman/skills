@@ -110,7 +110,9 @@ settings, hooks, skills and editor rules, such as `.claude/settings.json`,
 `.cursor/rules/` or `.github/copilot-instructions.md`, instruction files in
 subdirectories, and whether a second agent tool would pick up the same instructions.
 A `CLAUDE.md` with no `AGENTS.md` leaves Codex without them. When scoring a package,
-check for instruction files that apply to that package's path.
+check for instruction files that apply to that package's path. Also record whether
+the instructions or docs describe a testing approach, such as TDD, writing testable
+code, where tests go and what kind of tests to write.
 
 ## Consistency
 
@@ -142,13 +144,38 @@ passes with no question. With no default, such as a required `DATABASE_URL` with
 value set, it fails unless the docs direct users to a local or test service. If the
 tests use no services, it's N/A.
 
+A **coverage gate** is a branch-coverage threshold that fails CI, on the whole
+codebase or on changed code, such as diff-cover, a Codecov patch target or a
+SonarQube new-code condition. Both count the same. Codecov and Sonar post a status
+rather than failing a job, so a failing status counts unless it's marked
+`informational`. Codecov's `target: auto` has no fixed number, so it can't meet 95%.
+A line-only threshold or a report that never fails isn't a gate. An overall gate
+below 100% rarely catches a small untested branch. That's expected, and it's why the
+coverage fix below is a gate on changed code. Gate requirements are N/A where the
+stack has no branch-coverage tool, or the repo has no tests, which Verification
+already covers. Not configuring the stack's tool doesn't make them N/A.
+
+Record as static evidence the coverage tool, whether branch coverage is on, the
+threshold, whether CI fails on it, and whether it applies overall or to changed code.
+Also record exclusions, leaving out generated, vendored and test code: exclusion
+comments, such as `# pragma: no cover` or `istanbul ignore`, per 1,000 lines of
+production code (counting lines in ignored paths too); and separately, the
+production lines in paths the coverage config ignores. Save the searches for reruns.
+Exclusions usually point to code that's hard to test, and they're the quickest way
+for an agent to pass a gate.
+
 | Grade | Static | Measured |
 |-------|--------|----------|
 | F | No linter, formatter or other mechanical check. | No such checks, or no violations caught. |
 | D | Tools are configured, but CI doesn't run them. | Catch rate above 0% and below 40%. |
 | C | CI runs a linter and formatter, plus a security scanner where the stack has one. | Catch rate at least 40%. |
-| B | | Catch rate at least 60%, CI runs a security scanner where the stack has one, test isolation where it applies, and the checks that caught violations are required to merge (optional). |
-| A | | Catch rate at least 85%, plus CI-enforced module boundary checks and performance budgets on key paths, each where it applies, test isolation where it applies, a rule or structural test for every convention corrected twice (optional), and the checks that caught violations are required to merge (optional). |
+| B | | Catch rate at least 60%, CI runs a security scanner where the stack has one, test isolation where it applies, a coverage gate, and the checks that caught violations are required to merge (optional). |
+| A | | Catch rate at least 85%, plus CI-enforced module boundary checks and performance budgets on key paths, each where it applies, test isolation where it applies, a coverage gate at 95% or more, every excluded untested branch caught where it applies (for example by a lint rule or a check on coverage config), a rule or structural test for every convention corrected twice (optional), and the checks that caught violations are required to merge (optional). |
+
+**Coverage fix.** When there's no coverage gate, or it's below 95%, suggest a
+branch-coverage gate on changed code at 95% or more, not a higher overall threshold.
+It moves the untested-branch catch and the Guardrails grade, such as "Guardrails C to
+B".
 
 Whether reviews are required and whether a `CODEOWNERS` file exists are evidence only,
 and don't change the grade. `CODEOWNERS` counts as evidence of review only if review

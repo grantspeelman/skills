@@ -24,6 +24,11 @@ it. An "unknown" estimate is fine, because the budget is the limit.
 - A bug missed by its relevant tests, with no budget left for the full commands,
   counts as missed and is labelled "missed by relevant tests". A bug that never
   ran leaves the sample, and the report says so.
+- **Planted violations:** run the commands likely to catch each one first, such as
+  lint, format, typecheck or a hook. For the coverage types, that's the coverage
+  command: a changed-code gate needs only the tests covering the touched file, an
+  overall gate the full run. Run the full commands on any violation those miss,
+  while budget remains. A violation that never ran leaves the sample.
 
 ## Seeded bugs (Verification)
 
@@ -103,9 +108,10 @@ wrong behaviour. Record which check caught it. A type checker rejecting the wron
 behaviour is a catch.
 
 - These don't count as catches: gates that fail on any patch, such as
-  `git diff --exit-code` or a coverage threshold any change trips, style-only
-  failures, such as a lint error on an unused variable, and a warning from a check
-  that still exits successfully.
+  `git diff --exit-code`, style-only failures, such as a lint error on an unused
+  variable, and a warning from a check that still exits successfully.
+- A coverage gate failing on a seeded bug isn't a catch, and doesn't make the bug
+  invalid. Planted violations treat coverage differently; see there.
 - A bug is **invalid** and gets replaced if it has a syntax error or an undefined
   name, if it trips only those gates, or if it turns out not to change behaviour.
 - If a single test is the only new failure, run `sandbox restore` and rerun that
@@ -174,30 +180,74 @@ with a pinned tool are covered. Label the files static and the install notes mea
 
 ## Planted violations (Guardrails)
 
-Plant 5 violations, picking from these where they apply:
+Plant 10 violations. Required types go in wherever they apply:
 
+- **untested branch:** about 1 to 10 lines of new production code with a branch no
+  test covers, such as an added `if` path or a new function. Applies where the repo
+  has tests and the stack has a branch-coverage tool, whether or not the repo
+  configures it.
+- **excluded untested branch:** the same, hidden behind a coverage exclusion, such as
+  `# pragma: no cover` or `/* istanbul ignore next */`. Applies like the untested
+  branch, where the tool has an exclusion mechanism.
+
+Write the required types so they pass lint, formatting, type checks and the existing
+tests, apart from any check on coverage or exclusions themselves. Where the run
+produces a coverage report, confirm from it that the branch really is uncovered, and
+that the tool honours the exclusion form used. If not, replace the patch.
+
+Fill the rest from these, each where it applies. Include a breach of a documented
+convention whenever the repo documents conventions:
+
+- a breach of a convention the repo states in its docs or agent instructions
 - a formatting break
 - a breach of a configured lint rule
-- a breach of a convention the repo states in its docs or agent instructions
 - a call across a module boundary the repo says is off limits
 - an obvious security flaw, such as unsanitised input in a query
 - a fake credential in a real provider's format, invented for this run
 - a broken CI or config file, such as an invalid workflow or a config that fails its
   schema
 
+Types may repeat to reach 10, each repeat using a different rule or site. Prefer
+repeating documented convention, lint rule and security flaw. No type appears more
+than twice. Fewer than 5 applicable types, or fewer than 5 violations that ran,
+means this check is "not measured".
+
 For each, edit the clone, run `sandbox capture violations/<NN>-<type>.patch`, then
-apply it and run the commands as CI runs them. If the commands don't catch a violation
-and a documented hook runs a check for it, run that hook in the clone with
-`sandbox run`, as the plan lists. If a scanner or hook reads staged files,
-staging in the clone is fine. Then restore. On a rerun, reuse the earlier patches
-that still apply, and top up to 5.
+apply it and run the commands as CI runs them, likely ones first as "Budget" says.
+If the commands don't catch a violation and a documented hook runs a check for it,
+run that hook in the clone with `sandbox run`, as the plan lists. If a scanner or
+hook reads staged files, staging in the clone is fine. Then restore. On a rerun,
+reuse the earlier patches that still apply, and top up to 10, keeping each required
+type that applies.
 
 A violation counts as caught only if CI runs that check, or the documented setup
 installs a hook that does. A check that only prints a warning and still exits
 successfully doesn't catch a violation. A broken CI or config file counts as caught
 only if a check in the commands or a documented hook fails on it locally, because the
 clone has no CI of its own. Nothing here should execute a deploy or release step.
-Fewer than 3 applicable violations means this check is "not measured".
+
+**Coverage gates.** The clone has no `origin` and no CI services, so evaluate a gate
+locally where that's deterministic. Run CI's coverage command, then apply the
+configured target: an overall threshold as the tool runs it, or branch coverage of
+the change against the settled baseline commit, such as
+`diff-cover coverage.xml --compare-branch=<baseline sha> --fail-under=<target>` or
+the tool's equivalent. Take the target from the repo's config, such as the patch
+target in `codecov.yml` or a Sonar new-code condition, and label the result
+"measured, evaluated locally against <config>". This is how a changed-code gate
+avoids the no-`origin` rule in step 3 of [SKILL.md](../SKILL.md). A Codecov status
+marked `informational` isn't a gate. If the target can't be reproduced, such as
+Codecov `target: auto` or a gate set only on a Sonar server, and no gate that could
+be evaluated caught it, the untested branch is not measured and leaves the sample.
+List extra tools, such as diff-cover, on the plan's `Other:` line.
+
+An untested branch counts as caught only if a coverage gate fails on it. Don't
+enlarge the patch to trip an overall gate. If the gate already fails on the baseline,
+it's missed, because a red gate protects nothing, unless it fails only because this
+run withheld a variable or credential. Then it's not measured, as in "When the
+baseline fails". An excluded untested branch counts as caught only if something fails
+because of the exclusion, such as a lint rule banning new exclusion comments or a
+check on changes to coverage config. A coverage gate that passes because the code is
+excluded misses it.
 
 ## Fresh-agent checks (Context)
 
@@ -220,9 +270,10 @@ command proves a change to a given area works, where a given rule is enforced,
 which module owns a given concern, what a new endpoint must do.
 
 Where it applies, the six must include one each on: what an agent must not do without
-asking, which environment variables and services are needed to run the project, and
-why a notable design choice was made. For the last, choose the design choice with the
-most effect on a typical change, before checking whether the docs explain it.
+asking, which environment variables and services are needed to run the project, what
+kind of test a change to a named area needs and where it goes, and why a notable
+design choice was made. For the last, choose the design choice with the most effect
+on a typical change, before checking whether the docs explain it.
 
 If nothing in the repo answers a question, code included, keep it and say so in the
 key. An agent saying "the repo doesn't say" is honest but isn't correct, because this
@@ -230,7 +281,7 @@ measures what the repo tells an agent. A correct answer read from the code count
 such as a list of environment variables.
 
 Save both in `context/questions.md`. On a rerun, reuse them, updating the key if the
-code changed. If an older set lacks any of those three, replace the questions closest
+code changed. If an older set lacks any of those four, replace the questions closest
 in topic to the missing ones, never choosing by which questions failed. The report
 names the questions removed and the ones added. Give the agent only this:
 

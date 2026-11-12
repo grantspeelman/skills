@@ -129,7 +129,9 @@ state file records it. Then remove the state file it names. If no `leftover_clon
 is listed, remove the state file only and leave any folder alone.
 
 Find the stack, CI's test, lint and typecheck commands, how the repo documents its
-setup, and any hooks the documented setup installs. Note whether the working tree has
+setup, and any hooks the documented setup installs. Note the coverage tool and its
+config: whether branch coverage is on, the threshold, whether CI fails on it, and
+whether it applies overall or to changed code. Note whether the working tree has
 uncommitted changes, because only the commit gets scored.
 
 Look for services the tests may touch: Docker Compose files, database and queue
@@ -162,11 +164,11 @@ Credentials:  unset by name for test runs: AWS_SECRET_ACCESS_KEY, GH_TOKEN
               kept for install only: none
               tests can read these: ~/.aws, ~/.netrc
               This goes by name and path, so it can miss some.
-Seeded:       10 bugs, plus 5 planted convention violations
+Seeded:       10 bugs, plus 10 planted violations, two of them untested code
 Agents:       3 fresh agents, one for the bugs and two for the docs check
-Other:        npx jscpd for duplication; read-only gh calls for CI history and
-              merge rules; documented pre-commit hook, for violations the commands
-              miss
+Other:        npx jscpd for duplication; diff-cover for the changed-code coverage
+              gate; read-only gh calls for CI history and merge rules; documented
+              pre-commit hook, for violations the commands miss
 Access:       save folder ok, temp ok, network ok, gh ok
 Budget:       unknown until the first test run. Stops at 60 minutes.
 Saved to:     ~/.agent-friendliness-score/payments-api-1a2b3c4d/ (full results)
@@ -212,7 +214,9 @@ install only. Then run `sandbox settle`, even if install changed nothing or fail
 If install fails, follow "When the baseline fails" in
 [references/checks.md](references/checks.md). Setup warns about submodules, Git
 LFS and shallow history. A check that fails only because the clone has no
-`origin`, such as a script using `origin/main`, is "not measured".
+`origin`, such as a script using `origin/main`, is "not measured". Coverage gates
+on changed code are the exception: [references/checks.md](references/checks.md)
+evaluates them locally.
 
 ## 4. Run the measured checks
 
@@ -234,7 +238,8 @@ That's a measured result, an F for Verification.
 ## 5. Read the static evidence
 
 Now read the tests, and any earlier report for this repo. Collect the static
-evidence each category in [references/scoring.md](references/scoring.md) asks for.
+evidence each category in [references/scoring.md](references/scoring.md) asks for,
+including the count of coverage exclusions.
 
 ## 6. Grade
 
@@ -249,8 +254,9 @@ the metric it moves, the current and target values, and the grade change, such a
 these ten patches" only games the rerun, so don't suggest it. A gap in this run's
 measurement isn't a fix either, so "install jscpd" or "move to GitHub Actions"
 can't rank. List those gaps as ceilings in the evidence. A fix must also pass the
-evidence filter in [references/scoring.md](references/scoring.md). Don't apply any
-fix. This skill only reports.
+evidence filter in [references/scoring.md](references/scoring.md), and, when a
+coverage fix ranks, use the form scoring.md gives. Don't apply any fix. This skill
+only reports.
 
 ## 8. Report, save and clean up
 
@@ -264,7 +270,7 @@ Verification    B  ███████████████░░░░░ 
 Feedback speed  B  ███████████████░░░░░  relevant tests in 3m 40s
 Context         C  ██████████░░░░░░░░░░  5 of 6 answers correct  (ceiling: rules match not measured)
 Consistency     B  ███████████████░░░░░  4.1% duplication  (low confidence)
-Guardrails      B  ███████████████░░░░░  4 of 5 violations caught
+Guardrails      B  ███████████████░░░░░  8 of 10 violations caught
 ```
 
 This skill is a work in progress.
