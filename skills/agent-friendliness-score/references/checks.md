@@ -25,10 +25,11 @@ it. An "unknown" estimate is fine, because the budget is the limit.
   counts as missed and is labelled "missed by relevant tests". A bug that never
   ran leaves the sample, and the report says so.
 - **Planted violations:** run the commands likely to catch each one first, such as
-  lint, format, typecheck, a security scanner or a hook. For the coverage types,
-  that's the coverage command: a changed-code gate needs only the tests covering the
-  touched file, an overall gate the full run. Run the full commands on any violation
-  those miss, while budget remains. A violation that never ran leaves the sample.
+  lint, format, typecheck, a security scanner, a duplication check or a hook. For
+  the coverage types, that's the coverage command: a changed-code gate needs only
+  the tests covering the touched file, an overall gate the full run. Run the full
+  commands on any violation those miss, while budget remains. A violation that
+  never ran leaves the sample.
 
 ## Seeded bugs (Verification)
 
@@ -231,6 +232,10 @@ Plant 10 violations. Required types go in wherever they apply:
 - **fake credential:** a key or token in a real provider's format, such as an AWS
   access key, invented for this run. Applies to every repo, because any repo can
   leak a secret.
+- **copied code:** an existing production function of about 20 to 40 lines, or the
+  duplication tool's minimum size if that's larger, copied into another production
+  module with small renames, instead of reusing it. Applies wherever the repo has
+  production code in a language a duplication tool supports, such as jscpd.
 
 Write each required type so only the check it targets can fail:
 
@@ -253,6 +258,14 @@ Write each required type so only the check it targets can fail:
   scanner that reports only verified secrets, such as trufflehog `--only-verified`,
   can never flag an invented key, so the fake credential leaves the sample, and
   coverage falls back to the config.
+- The copied code passes lint, formatting, type checks and the existing tests. Only
+  a duplication check may fail. Copy from a hotspot, and route one call site the
+  existing tests already reach through the copy, picking one where the original stays
+  covered by other tests, so behaviour and test results stay the same, with no
+  unused code or new uncovered lines. Before planting, confirm the copy is reported:
+  with the repo's duplication config if it has one, in a module that config scans
+  and above its minimum tokens or lines; otherwise with jscpd or the stack's tool on
+  default settings.
 
 Where the run produces a coverage report, confirm from it that the branch really is
 uncovered, and that the tool honours the exclusion form used. Where the repo
@@ -298,8 +311,12 @@ commits in its directory mode, such as `gitleaks dir`, `gitleaks detect --no-git
 before v8.19, or trufflehog `filesystem`, passing the repo's config explicitly. It
 catches a violation only if it reports the planted file, so compare against a
 baseline scan, such as gitleaks `--baseline-path`, or scan only the changed files.
-Then restore. On a rerun, reuse the earlier patches that still apply, and top up to
-10, keeping each required type that applies.
+Then restore. On a rerun, fill the 10 in this order: each required type that
+applies, then a documented convention, then the earlier patches that still apply,
+reusing an earlier patch for any of these where one applies. If they don't fit, drop
+reused patches of the other types in a fixed order, the most repeated type first,
+then by patch number, never by result. Then top up from "Fill the rest from these".
+The report names the patches dropped and added.
 
 A violation counts as caught only if CI runs that check, or the documented setup
 installs a hook that does. A check that only prints a warning and still exits
@@ -334,7 +351,8 @@ run withheld a variable or credential. Then it's not measured, as in "When the
 baseline fails". An excluded untested branch counts as caught only if something fails
 because of the exclusion, such as a lint rule banning new exclusion comments or a
 check on changes to coverage config. A coverage gate that passes because the code is
-excluded misses it.
+excluded misses it. [scoring.md](scoring.md) says what a caught or missed untested
+branch shows about the gate.
 
 **Type errors.** A type error counts as caught if a check in the commands, or a
 documented hook, fails on it. Record which: a type checker, the compiler, a lint rule
@@ -346,6 +364,20 @@ fails only on new ones. A suppressed type error counts as caught only if somethi
 fails because of the suppression, such as `@typescript-eslint/ban-ts-comment`,
 `no-explicit-any`, golangci-lint `forcetypeassert` or a Semgrep rule. A type checker
 that passes because of the suppression misses it.
+
+**Copied code.** It counts as caught only if a duplication check in the commands, or
+a documented hook, fails on it. A coverage gate failing on copied code isn't a catch.
+A check already failing on the baseline catches nothing, like a red coverage gate.
+Don't enlarge the copy to trip an overall threshold. Run a changed-code gate as CI
+runs it, with the settled baseline commit as the base, such as
+`golangci-lint run --new-from-rev=<baseline sha>` for `dupl`. For jscpd, pylint
+`duplicate-code` or PMD CPD, scan the whole tree with the repo's config, such as
+jscpd `--reporters json`, and keep clones with a fragment in a changed file, or
+compare against a baseline report. Duplication tools find clones only within what
+they scan, so a gate that scans only changed files misses a copy of unchanged code.
+If a gate can't be reproduced, such as one evaluated only on a Sonar server, and no
+check that could run caught the copy, it leaves the sample. [scoring.md](scoring.md)
+says how the result counts.
 
 ## Fresh-agent checks (Context)
 
@@ -369,9 +401,13 @@ which module owns a given concern, what a new endpoint must do.
 
 Where it applies, the six must include one each on: what an agent must not do without
 asking, which environment variables and services are needed to run the project, what
-kind of test a change to a named area needs and where it goes, and why a notable
-design choice was made. For the last, choose the design choice with the most effect
-on a typical change, before checking whether the docs explain it.
+kind of test a change to a named area needs and where it goes, why a notable design
+choice was made, and whether there's an existing helper for a common concern. For the
+design choice, choose the one with the most effect on a typical change, before
+checking whether the docs explain it. For the helper, choose a concern with a helper
+that has several call sites, such as date formatting, API errors or retries. The
+question names the concern, not the helper, and the key names the helper's module and
+function. This shows whether an agent can find code to reuse.
 
 If nothing in the repo answers a question, code included, keep it and say so in the
 key. An agent saying "the repo doesn't say" is honest but isn't correct, because this
@@ -379,7 +415,7 @@ measures what the repo tells an agent. A correct answer read from the code count
 such as a list of environment variables.
 
 Save both in `context/questions.md`. On a rerun, reuse them, updating the key if the
-code changed. If an older set lacks any of those four, replace the questions closest
+code changed. If an older set lacks any of those five, replace the questions closest
 in topic to the missing ones, never choosing by which questions failed. The report
 names the questions removed and the ones added. Give the agent only this:
 
@@ -414,8 +450,13 @@ check is N/A.
 This is the weakest measure. A count can't tell an unfinished migration from a
 deliberate choice, so label it low confidence.
 
-- **Duplication:** run `jscpd` or the stack's own tool if the plan listed it,
-  excluding generated and vendored code. If none can run, mark it "not measured".
+- **Duplication:** measure the percentage with `jscpd`, or another tool that reports
+  one, excluding generated and vendored code. pylint, `dupl` and PMD CPD don't report
+  a percentage. If the repo configures a duplication tool, measure again with its
+  ignored paths too, and grade that number if those paths hold under 10% of
+  production lines. Otherwise grade the number with default exclusions. Always save
+  the default number, so reruns compare like for like. If none can run, mark it
+  "not measured".
 - **Competing patterns:** choose at least 4 concerns that apply, such as error
   handling, validation, data access, HTTP calls, config, logging, auth checks or
   state. Count the distinct approaches with repeatable searches, and check whether

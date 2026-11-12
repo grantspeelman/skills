@@ -133,8 +133,9 @@ is listed, remove the state file only and leave any folder alone.
 Find the stack, CI's test, lint and typecheck commands, how the repo documents its
 setup, and any hooks the documented setup installs. Note the coverage tool and its
 config: whether branch coverage is on, the threshold, whether CI fails on it, and
-whether it applies overall or to changed code. Note the type checker, whether it's
-strict and whether CI fails on it. List the significant languages, as
+whether it applies overall or to changed code. Note the duplication tool the same
+way, with the paths its config ignores. Note the type checker, whether it's strict
+and whether CI fails on it. List the significant languages, as
 [references/scoring.md](references/scoring.md) defines them, with the linter and
 formatter CI runs for each, and whether each is established or custom. Note the
 security scanners for each kind scoring.md lists, in CI and in documented hooks, and
@@ -174,7 +175,7 @@ Credentials:  unset by name for test runs: AWS_SECRET_ACCESS_KEY, GH_TOKEN
               tests can read these: ~/.aws, ~/.netrc
               This goes by name and path, so it can miss some.
 Seeded:       10 bugs, plus 10 planted violations, including untested code, type
-              errors, a fake credential and documented conventions
+              errors, a fake credential, copied code and documented conventions
 Agents:       3 fresh agents, one for the bugs and two for the docs check
 Other:        npx jscpd for duplication; diff-cover for the changed-code coverage
               gate; read-only gh calls for CI history, merge rules and security
@@ -251,8 +252,9 @@ That's a measured result, an F for Verification.
 
 Now read the tests, and any earlier report for this repo. Collect the static
 evidence each category in [references/scoring.md](references/scoring.md) asks for,
-including the counts of coverage exclusions, type-check escape hatches and security
-suppressions, and which check enforces each tool-enforceable convention.
+including the counts of coverage exclusions, type-check escape hatches, and security
+and duplication suppressions, and which check enforces each tool-enforceable
+convention.
 
 ## 6. Grade
 
@@ -268,8 +270,8 @@ these ten patches" only games the rerun, so don't suggest it. A gap in this run'
 measurement isn't a fix either, so "install jscpd" or "move to GitHub Actions"
 can't rank. List those gaps as ceilings in the evidence. A fix must also pass the
 evidence filter in [references/scoring.md](references/scoring.md), and, when a
-coverage, type-check, lint-rule or security fix ranks, use the form scoring.md gives.
-Don't apply any fix. This skill only reports.
+coverage, type-check, lint-rule, security or duplication fix ranks, use the form
+scoring.md gives. Don't apply any fix. This skill only reports.
 
 ## 8. Report, save and clean up
 

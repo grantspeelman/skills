@@ -115,20 +115,55 @@ code, where tests go and what kind of tests to write.
 
 ## Consistency
 
-Is there one way to do each thing? This is the weakest category, because counts can't
-judge intent. Mark it low confidence in every report. A **competing concern** has two
-or more approaches and no preferred one named in the docs.
+Is there one way to do each thing, and does the repo stop new copies? This is the
+weakest category, because counts can't judge intent. Mark it low confidence in every
+report. The duplication gate and the copied-code result are concrete checks, so the
+evidence doesn't label them low confidence. A **competing concern** has two or more
+approaches and no preferred one named in the docs.
+
+A **duplication gate** is a duplication check that fails CI, on the whole codebase or
+on changed code, such as jscpd with a threshold, PMD CPD, pylint `duplicate-code`,
+golangci-lint `dupl`, flay, or SonarQube or Qlty duplication on new code. Both count
+the same. A Sonar or Qlty result counts when CI fails on it, such as with
+`sonar.qualitygate.wait=true`, or as a status, as for a coverage gate in Guardrails.
+Gate requirements are N/A where no production language has a duplication tool.
+
+The copied-code violation in [checks.md](checks.md) counts in the Guardrails catch
+rate like any violation, and is the measured evidence for the duplication gate. A copy
+caught in CI proves a gate exists. A gate that misses it still counts when the copy
+stayed within its threshold, as with an overall percentage, and the miss only lowers
+the catch rate. It doesn't count when the copy falls outside what it checks, such as
+an ignored path, a language it doesn't cover, a job that doesn't run or a scan of
+changed files only, because measured beats static. An overall percentage rarely
+catches one copy, which is why the duplication fix below is a gate on changed code.
+
+Record as static evidence the duplication tool, its threshold, whether CI fails on
+it, and whether it applies overall or to changed code. Also record suppressions,
+leaving out generated, vendored and test code: comments such as `jscpd:ignore-start`
+blocks, `# pylint: disable=duplicate-code` or `//nolint:dupl`, per 1,000 lines of
+production code; and separately, the production lines in paths the duplication
+config ignores. Suppressions are **checked** when a new one fails a check unless it
+gives a reason, or needs a required review, such as `CODEOWNERS` on the config with
+reviews required, which also covers new ignored paths. Save the searches for reruns.
 
 | Grade | Static | Measured |
 |-------|--------|----------|
 | F | | Duplication over 15%, and at least two concerns have three or more approaches. |
 | D | No stated conventions. | Duplication 10% or more, or more than two competing concerns. |
 | C | Conventions documented for most concerns, or a configured size or complexity limit. | Duplication under 10% or not measured, and at most two competing concerns. |
-| B | | Duplication under 5%, at most one competing concern, and at most 3 non-generated files over about 1,000 lines. |
-| A | | Duplication under 3%, no competing concerns, no file over about 1,000 lines on both hotspot lists, and CI enforces a size or complexity limit. |
+| B | | Duplication under 5%, at most one competing concern, at most 3 non-generated files over about 1,000 lines, and a duplication gate where it applies. |
+| A | | Duplication under 3%, no competing concerns, no file over about 1,000 lines on both hotspot lists, CI enforces a size or complexity limit, and a duplication gate with its suppressions checked, where it applies. |
 
-Without a duplication tool, this category stops at C. Show it as a ceiling,
+If the duplication count can't run, this category stops at C. Show it as a ceiling,
 `C (ceiling: duplication not measured)`.
+
+**Duplication fix.** When there's no duplication gate, or the copied code got past
+it, suggest a gate on changed code that scans the whole tree, naming the tool for this
+stack, such as "run jscpd on the whole tree in CI and fail on clones in changed
+files" or "turn on golangci-lint `dupl` with `new-from-merge-base`". It moves the
+copied-code catch, the Guardrails catch rate and the Consistency grade, such as
+"Consistency C to B". When duplication suppressions aren't checked, name the check,
+such as `CODEOWNERS` on `.jscpd.json` with reviews required, for "Consistency B to A".
 
 ## Guardrails
 
@@ -148,8 +183,13 @@ codebase or on changed code, such as diff-cover, a Codecov patch target or a
 SonarQube new-code condition. Both count the same. Codecov and Sonar post a status
 rather than failing a job, so a failing status counts unless it's marked
 `informational`. Codecov's `target: auto` has no fixed number, so it can't meet 95%.
-A line-only threshold or a report that never fails isn't a gate. An overall gate
-below 100% rarely catches a small untested branch. That's expected, and it's why the
+A line-only threshold or a report that never fails isn't a gate. The untested branch
+(not the excluded one) caught in CI proves a gate exists. A gate that misses it still
+counts when the change met its target, as with an overall gate or a changed-code
+target the change was above, and the miss only lowers the catch rate. It doesn't
+count when the change falls outside what it checks, such as an ignored path, a
+language it doesn't cover or a job that doesn't run, because measured beats static.
+An overall gate below 100% rarely catches a small untested branch, which is why the
 coverage fix below is a gate on changed code. Gate requirements are N/A where the
 stack has no branch-coverage tool, or the repo has no tests, which Verification
 already covers. Not configuring the stack's tool doesn't make them N/A.
