@@ -31,8 +31,8 @@ it. An "unknown" estimate is fine, because the budget is the limit.
   lint, format, typecheck, a security scanner, a duplication check or a hook. For
   the coverage types, that's the coverage command: a changed-code gate needs only
   the tests covering the touched file, an overall gate the full run. Then run the
-  full commands on any violation those miss. A violation that never ran leaves the
-  sample.
+  full commands on any violation those miss. Plant the required types first. A
+  violation that never ran leaves the sample.
 - **Short of time in the last quarter,** drop work in this order: first, the full
   commands on violations their likely checks missed; then, violations beyond the
   first 5 that ran; then, a coverage type whose gate needs a full run that won't
@@ -351,11 +351,13 @@ documented hook fails on it locally, because the clone has no CI of its own. Git
 secret scanning and push protection can't catch a fake credential here, so they stay
 static evidence. Nothing here should execute a deploy or release step.
 
-**Red baseline.** A check that already fails on the baseline catches nothing,
-because a red check protects nothing. There are two exceptions. A check that keeps a
-baseline file of known errors and fails only on new ones can still catch. A check
-that fails only because this run withheld a variable or credential makes the result
-not measured, as in "When the baseline fails".
+**Red baseline.** A coverage gate, type checker or duplication check that already
+fails on the baseline catches nothing, because a red gate protects nothing. There are
+two exceptions. One that keeps a baseline file of known errors and fails only on new
+ones can still catch. One that fails only because this run withheld a variable or
+credential makes the result not measured, as in "When the baseline fails". Tests,
+lint, formatters and scanners follow the seeded-bug rule instead: a new failure the
+baseline didn't have counts.
 
 A documented-convention violation updates its rule in the conventions list: missed
 means not enforced, and caught means enforced, whatever the static record said.

@@ -316,8 +316,8 @@ provider and file.
    seeded catch rate from 70% to 90% (Verification B to A).
 
 ## Since the last run
-Verification C to B. Guardrails B to C (rules changed since the last run). Other
-grades unchanged. Seeded bugs: 5 of 7 reused caught, 2 of 3 new caught, 7 of 10
+Verification C to B. Other grades unchanged. Rules changed since the last run, so
+compare with care. Seeded bugs: 5 of 7 reused caught, 2 of 3 new caught, 7 of 10
 together. Commit 91bd03e to 4f2a91c.
 ````
 
@@ -340,23 +340,21 @@ Older runs saved points instead of letters. A measured category was out of 20, a
 each 5 points is one grade step: 20 is A, 15 B, 10 C, 5 D and 0 F. A static-only
 category was out of 10: 10 is C, 5 is D and 0 is F.
 
-Rules change between versions of this skill. If the previous run's `version` differs
-from this one, or it has none, mark each category whose rules changed "rules changed
-since the last run", so a lower grade isn't read as a regression. If you can't tell
-which changed, mark them all.
+If the previous run's `rules_version` differs from the "Rules version" at the top of
+[references/scoring.md](references/scoring.md), or it has none, as with every older
+run, mark every category "rules changed since the last run", so a lower grade isn't
+read as a regression.
 
 Save these in `save_dir`, alongside the patches, context files and conventions list
 from step 4. They are what reruns compare against:
 
 - `report.md`: the report above.
-- `result.json`: commit, date, this skill's `version` from `plugin.json` in the
-  plugin's `.claude-plugin/` or `.codex-plugin/` folder, two levels above this
-  file, each category's grade as a letter and as points
-  (A 20 to F 0), whether each category is measured, raw metrics, the merge state
-  (required, not required or left out), push protection (on, off or left out), the
-  test isolation result, setup findings, replaced questions, who wrote the bugs, the
-  result for each patch, and the exact commands and searches used, so the next run
-  can compare and repeat them.
+- `result.json`: commit, date, `rules_version`, each category's grade as a letter
+  and as points (A 20 to F 0), whether each category is measured, raw metrics, the
+  merge state (required, not required or left out), push protection (on, off or left
+  out), the test isolation result, setup findings, replaced questions, who wrote the
+  bugs, the result for each patch, and the exact commands and searches used, so the
+  next run can compare and repeat them.
 
 Then run `sandbox finish --complete --report-to <folder>`, or leave out `--report-to`
 if the user chose the home folder only. This compares the scored repo first and

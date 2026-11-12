@@ -1,5 +1,10 @@
 # Scoring
 
+Rules version: 1
+
+Bump this number only when grading rules change. `result.json` saves it as
+`rules_version`, so a rerun can tell a rule change from a regression.
+
 ## Grading a category
 
 A category gets a grade: A, B, C, D or F. Each step is worth 5 points, so A is 20,
@@ -30,6 +35,8 @@ To pick the grade:
 1. If F's condition holds, grade F.
 2. Otherwise take the highest of A, B and C whose requirements are all met.
 3. If none is met, grade D. This covers any result that falls between grades.
+
+Each row stands alone unless it says "All of X, plus".
 
 Two kinds of missing requirement are treated differently:
 
@@ -65,8 +72,7 @@ coverage exclusions or type-check escape hatches. Each section names its markers
 Count them per 1,000 lines of production code, leaving out generated, vendored and
 test code, and save the searches for reruns. Suppressions are **checked** when a new
 one fails a check unless it gives a reason, or needs a required review, such as
-`CODEOWNERS` on the config with reviews required, or GitHub's delegated alert
-dismissal. If you can't read whether delegated dismissal is on, don't count it.
+`CODEOWNERS` on the config with reviews required.
 
 ## Verification
 
@@ -198,9 +204,9 @@ Not configuring the stack's tool doesn't make them N/A.
 Record as static evidence the coverage tool, whether branch coverage is on, the
 threshold, whether CI fails on it, and whether it applies overall or to changed code.
 Also record exclusion comments, such as `# pragma: no cover` or `istanbul ignore`,
-counting lines in ignored paths too, and separately the production lines in paths
-the coverage config ignores. Exclusions usually point to code that's hard to test,
-and they're the quickest way for an agent to pass a gate.
+with lines in ignored paths in the denominator, and separately the production lines
+in paths the coverage config ignores. Exclusions usually point to code that's hard
+to test, and they're the quickest way for an agent to pass a gate.
 
 A **type checker** counts when CI runs it and fails the build on an error, such as
 `tsc --noEmit`, mypy, pyright, Sorbet or PHPStan. A TypeScript build through esbuild,
@@ -337,6 +343,7 @@ beside Ruff. Prefer a linter CI already runs, and group the conventions one tool
 take. With none documented, suggest writing down the conventions agents most often
 break and enforcing them the same way. It can move conventions enforced, the
 documented-convention catch and the Guardrails grade, such as "Guardrails B to A".
+
 **Security fix.** When a kind of security scanning is missing, name the tool and
 where it runs for this stack, such as "add brakeman to CI" or "add gitleaks to CI
 and as a pre-commit hook", not "add security scanning". It can move the
