@@ -40,13 +40,12 @@ Two kinds of missing requirement are treated differently:
   `C (ceiling: rules match not measured)`. A ceiling is a gap in this run, so it
   never counts as a top fix.
 
-**Optional items.** Flaky rate, CI time, review history and merge rules live on a
-hosting service, so they say more about access or the CI provider than about the
-repo. When they can't be reached, leave them out, name each with the reason in the
-report, and don't show a ceiling. When they can, they count like any other
-requirement. A repo on another CI system can still reach A.
-[checks.md](checks.md) sets the order for merge rules, including when only hooks
-caught violations.
+**Optional items.** Flaky rate, CI time and merge rules live on a hosting service,
+so they say more about access or the CI provider than about the repo. When they can't
+be reached, leave them out, name each with the reason in the report, and don't show a
+ceiling. When they can, they count like any other requirement. A repo on another CI
+system can still reach A. [checks.md](checks.md) sets the order for merge rules,
+including when only hooks caught violations.
 
 ## Verification
 
@@ -193,13 +192,56 @@ code: `any`, non-null `!`, `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`,
 Go's `interface{}` and `any`, which are often idiomatic. Save the searches for reruns.
 Like exclusions, they let an agent silence a check instead of fixing the cause.
 
+A language is **significant** if it has at least 5 files or 5% of lines. A file is a
+tracked file of that type, leaving out generated and vendored code, lockfiles and data
+fixtures. Dockerfiles and CI workflows are significant from one file, because they
+build or run the code. Workflows are their own group, needing actionlint and no
+formatter, but count towards YAML's totals, so one workflow alone doesn't make YAML
+significant. When YAML is significant, its linter and formatter cover workflow files
+too. Markdown includes `.mdx`. Shell, YAML, Markdown and SQL count like any other
+language. JSON, TOML, XML and CSV aren't significant languages. Count with
+`git ls-files` by extension, or scc or tokei if installed, and save the command for
+reruns.
+A **production language** is one the shipped code is written in, not docs, CI or
+config.
+
+A significant language is **linted and formatted** when CI fails on a linter and a
+formatter check for its files. A language with no established formatter, such as a
+Dockerfile, needs only the linter. Easy ones to miss: shell (shellcheck, shfmt),
+Dockerfiles (hadolint), CI workflows (actionlint), YAML (yamllint), Markdown
+(markdownlint) and SQL (SQLFluff). A formatter that rewrites files without failing
+doesn't count.
+
+Each check is **established**, a widely used, maintained tool, or **custom**, the
+repo's own code, such as a grep script in CI. Custom checks count wherever a check is
+required, for C and for conventions enforced, because they're better than nothing. B
+needs established tools for every significant language, and for each production
+language one that supports custom rules, so a new rule runs in the same editor, CI
+step and hook as the standard ones. Examples are ESLint plugins, RuboCop custom cops,
+golangci-lint module plugins, ArchUnit and dependency-cruiser. Where the main linter
+has no plugin API, such as Ruff or Clippy, Semgrep or ast-grep in CI provides custom
+rules. Custom checks may still run alongside these without failing B.
+
+**Conventions enforced** is the share of tool-enforceable conventions that a lint
+rule or structural test enforces, in CI or a documented hook. [checks.md](checks.md)
+says how to build the list, and how planted violations override it. It's N/A only
+when the repo has no production code, such as docs or config only. Otherwise, with no
+tool-enforceable convention in the docs or review history, it's 0%, so B and A aren't
+met: an agent can't follow conventions nobody wrote down, and there's nothing to turn
+into tooling.
+
+Record as static evidence each significant language with its share of files and
+lines, its linter and formatter, whether CI fails on them, and whether each is
+established or custom. Also record conventions enforced, with how many conventions
+are tool-enforceable and how many are judgment.
+
 | Grade | Static | Measured |
 |-------|--------|----------|
 | F | No linter, formatter or other mechanical check. | No such checks, or no violations caught. |
 | D | Tools are configured, but CI doesn't run them. | Catch rate above 0% and below 40%. |
-| C | CI runs a linter and formatter, plus a security scanner and a type checker, each where the stack has one. | Catch rate at least 40%, and CI runs a type checker where the stack has one. |
-| B | | Catch rate at least 60%, CI runs a security scanner where the stack has one, test isolation where it applies, a coverage gate, a strict type checker where the stack has one, and the checks that caught violations are required to merge (optional). |
-| A | | Catch rate at least 85%, plus CI-enforced module boundary checks and performance budgets on key paths, each where it applies, test isolation where it applies, a coverage gate at 95% or more, every excluded untested branch caught where it applies (for example by a lint rule or a check on coverage config), a strict type checker where the stack has one, every suppressed type error caught where it applies, a rule or structural test for every convention corrected twice (optional), and the checks that caught violations are required to merge (optional). |
+| C | CI lints and formats every significant language, plus a security scanner and a type checker, each where the stack has one. | Catch rate at least 40%, CI lints and formats every significant language, and CI runs a type checker where the stack has one. |
+| B | | Catch rate at least 60%, CI lints and formats every significant language with established tools, each where one exists, with custom-rule support for each production language, conventions enforced at least 50% where it applies, CI runs a security scanner where the stack has one, test isolation where it applies, a coverage gate, a strict type checker where the stack has one, and the checks that caught violations are required to merge (optional). |
+| A | | Catch rate at least 85%, established tools with custom-rule support, as for B, conventions enforced at least 80% where it applies, plus CI-enforced module boundary checks and performance budgets on key paths, each where it applies, test isolation where it applies, a coverage gate at 95% or more, every excluded untested branch caught where it applies (for example by a lint rule or a check on coverage config), a strict type checker where the stack has one, every suppressed type error caught where it applies, and the checks that caught violations are required to merge (optional). |
 
 **Coverage fix.** When there's no coverage gate, or it's below 95%, suggest a
 branch-coverage gate on changed code at 95% or more, not a higher overall threshold.
@@ -210,6 +252,16 @@ B".
 and setting for this stack, such as "turn on `strict` in tsconfig.json" or "add
 `mypy --strict` to CI". It can move the type-error catch, and moves the Guardrails
 grade, such as "Guardrails D to C" for a new checker or "C to B" for strict.
+
+**Lint-rule fix.** When a significant language has no linter or formatter in CI, name
+the tool and the CI step, such as "add markdownlint and shellcheck to CI". It moves
+the Guardrails grade, such as "Guardrails D to C". When a tool-enforceable convention
+isn't enforced, suggest turning it into a lint rule, naming the tool, such as an
+ESLint `no-restricted-imports` entry, a RuboCop custom cop or a Semgrep rule beside
+Ruff. Prefer a linter CI already runs, and group the conventions one tool can take.
+With none documented, suggest writing down the conventions agents most often break
+and enforcing them the same way. It moves conventions enforced, the
+documented-convention catch and the Guardrails grade, such as "Guardrails B to A".
 
 Whether reviews are required and whether a `CODEOWNERS` file exists are evidence only,
 and don't change the grade. `CODEOWNERS` counts as evidence of review only if review

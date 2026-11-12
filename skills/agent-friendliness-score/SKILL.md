@@ -132,8 +132,11 @@ Find the stack, CI's test, lint and typecheck commands, how the repo documents i
 setup, and any hooks the documented setup installs. Note the coverage tool and its
 config: whether branch coverage is on, the threshold, whether CI fails on it, and
 whether it applies overall or to changed code. Note the type checker, whether it's
-strict and whether CI fails on it. Note whether the working tree has uncommitted
-changes, because only the commit gets scored.
+strict and whether CI fails on it. List the significant languages, as
+[references/scoring.md](references/scoring.md) defines them, with the linter and
+formatter CI runs for each, and whether each is established or custom. Read the docs
+and agent instructions; step 4 builds the conventions list from them. Note whether the
+working tree has uncommitted changes, because only the commit gets scored.
 
 Look for services the tests may touch: Docker Compose files, database and queue
 config, required environment variables, and HTTP calls without a stub library. This
@@ -166,8 +169,8 @@ Credentials:  unset by name for test runs: AWS_SECRET_ACCESS_KEY, GH_TOKEN
               kept for install only: none
               tests can read these: ~/.aws, ~/.netrc
               This goes by name and path, so it can miss some.
-Seeded:       10 bugs, plus 10 planted violations, including untested code and
-              type errors
+Seeded:       10 bugs, plus 10 planted violations, including untested code, type
+              errors and documented conventions
 Agents:       3 fresh agents, one for the bugs and two for the docs check
 Other:        npx jscpd for duplication; diff-cover for the changed-code coverage
               gate; read-only gh calls for CI history and merge rules; documented
@@ -229,10 +232,11 @@ Run these in order, as [references/checks.md](references/checks.md) describes:
 2. Run the baseline.
 3. Time one test file and the relevant tests.
 4. Run the seeded bugs.
-5. Run the planted violations.
-6. Run the two fresh-agent checks.
-7. Run the consistency counts.
-8. Read CI history, review history and merge rules with `gh`, if available.
+5. Build the conventions list, with review history from `gh` if available.
+6. Run the planted violations.
+7. Run the two fresh-agent checks.
+8. Run the consistency counts.
+9. Read CI history and merge rules with `gh`, if available.
 
 Run `sandbox restore` between changes to the clone. Don't use bare git commands
 to restore. If there are no tests, skip steps 1 to 4 and carry on with the rest.
@@ -242,7 +246,8 @@ That's a measured result, an F for Verification.
 
 Now read the tests, and any earlier report for this repo. Collect the static
 evidence each category in [references/scoring.md](references/scoring.md) asks for,
-including the counts of coverage exclusions and type-check escape hatches.
+including the counts of coverage exclusions and type-check escape hatches, and which
+check enforces each tool-enforceable convention.
 
 ## 6. Grade
 
@@ -258,8 +263,8 @@ these ten patches" only games the rerun, so don't suggest it. A gap in this run'
 measurement isn't a fix either, so "install jscpd" or "move to GitHub Actions"
 can't rank. List those gaps as ceilings in the evidence. A fix must also pass the
 evidence filter in [references/scoring.md](references/scoring.md), and, when a
-coverage or type-check fix ranks, use the form scoring.md gives. Don't apply any
-fix. This skill only reports.
+coverage, type-check or lint-rule fix ranks, use the form scoring.md gives. Don't
+apply any fix. This skill only reports.
 
 ## 8. Report, save and clean up
 
@@ -318,8 +323,8 @@ Older runs saved points instead of letters. A measured category was out of 20, a
 each 5 points is one grade step: 20 is A, 15 B, 10 C, 5 D and 0 F. A static-only
 category was out of 10: 10 is C, 5 is D and 0 is F.
 
-Save these in `save_dir`, alongside the patches and context files from step 4. They
-are what reruns compare against:
+Save these in `save_dir`, alongside the patches, context files and conventions list
+from step 4. They are what reruns compare against:
 
 - `report.md`: the report above.
 - `result.json`: commit, date, each category's grade as a letter and as points

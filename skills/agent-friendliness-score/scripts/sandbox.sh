@@ -338,7 +338,8 @@ cmd_setup() {
     [ ! -f "${dir}complete" ] || previous_run="${dir%/}"
   done
   ( umask 077
-    mkdir -p "$base/.active" "$save_dir/seeded" "$save_dir/violations" "$save_dir/context" )
+    mkdir -p "$base/.active" "$save_dir/seeded" "$save_dir/violations" "$save_dir/context" \
+      "$save_dir/guardrails" )
 
   parent=$(mktemp -d "$tmp_root/afs-sandbox.XXXXXX")
   parent=$(cd "$parent" && pwd -P)

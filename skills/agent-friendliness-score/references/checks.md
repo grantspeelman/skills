@@ -178,6 +178,35 @@ have. These everyday system tools don't need pinning: `git`, `make`, `curl`, a s
 and its standard utilities, a C compiler and Docker. Anything else does. Tools bundled
 with a pinned tool are covered. Label the files static and the install notes measured.
 
+## Conventions (Guardrails)
+
+Build the conventions list before planting violations. Take the rules stated in agent
+instructions and docs, such as `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, style
+guides, architecture docs and editor rules such as `.cursor/rules/`, plus those from
+review history (see "Review history" below), which you read at this point. Never take
+rules from an earlier report. Only rules about the repo's content go in: code, tests,
+config, docs and file layout. Leave out rules about how an agent or person behaves,
+such as "never push" or "commit only when asked".
+
+Order the list so it can't be chosen: doc sources sorted by path, rules in the order
+they appear in each file, then review-history rules in comment order. Paraphrase each
+rule once, with its source, and classify it:
+
+- **tool-enforceable:** a lint rule or structural test could check it without
+  judgment, such as "don't import from `internal/` across packages" or "use the
+  logger, not `console.log`".
+- **judgment:** it needs a person to weigh it, such as "keep functions readable".
+
+In step 5 of [SKILL.md](../SKILL.md), once tests can be read, record for each
+tool-enforceable rule the lint rule or structural test that enforces it in CI or a
+documented hook, or none. A rule the formatter or a configured lint rule already
+covers counts. A planted result overrides this.
+
+Save the list in `guardrails/conventions.md`. On a rerun, reuse it: add rules the
+docs now state, drop rules they no longer state, keep review-history rules unless the
+docs contradict them, keep each classification unless the wording changed, and report
+what changed.
+
 ## Planted violations (Guardrails)
 
 Plant 10 violations. Required types go in wherever they apply:
@@ -217,9 +246,13 @@ configures a type checker, confirm it reports the type error, and passes once th
 suppression is added. If not, replace the patch.
 
 Fill the rest from these, each where it applies. Include a breach of a documented
-convention whenever the repo documents conventions:
+convention whenever the conventions list has a tool-enforceable rule:
 
-- a breach of a convention the repo states in its docs or agent instructions
+- a breach of a tool-enforceable rule from the conventions list. Take the first
+  rule not planted before, in list order, and mark it planted. Once every rule has
+  been planted, start again from the top. Skip rules already planted this run under
+  another type. On a rerun, reused patches usually fill these slots, so new picks
+  happen only when a patch no longer applies
 - a formatting break
 - a breach of a configured lint rule
 - a call across a module boundary the repo says is off limits
@@ -246,6 +279,10 @@ installs a hook that does. A check that only prints a warning and still exits
 successfully doesn't catch a violation. A broken CI or config file counts as caught
 only if a check in the commands or a documented hook fails on it locally, because the
 clone has no CI of its own. Nothing here should execute a deploy or release step.
+
+A documented-convention violation updates its rule in the conventions list: missed
+means not enforced, and caught means enforced, whatever the static record said.
+Measured beats static.
 
 **Coverage gates.** The clone has no `origin` and no CI services, so evaluate a gate
 locally where that's deterministic. Run CI's coverage command, then apply the
@@ -357,18 +394,18 @@ deliberate choice, so label it low confidence.
 - **Hotspots:** the hotspot list above, plus the 10 largest non-generated files.
   Note files on both lists. With shallow history, this is "not measured".
 
-## Review history (Guardrails, optional)
+## Review history (conventions source, optional)
 
-"Corrected twice" counts only if `gh` can read review comments. Run from the scored
-repo:
+Review history is one more source for the conventions list, if `gh` can read review
+comments. Run from the scored repo:
 
 ```bash
 gh api "repos/{owner}/{repo}/pulls/comments?per_page=100&sort=created&direction=desc"
 ```
 
-Find conventions corrected at least twice, then check whether a lint rule or
-structural test now enforces each one. Paraphrase. If review history can't be read,
-this item is optional and left out, as [scoring.md](scoring.md) explains.
+Add each convention corrected at least twice to the list, paraphrased, with review
+history as its source. If review history can't be read, the list comes from the docs
+alone; say so in the evidence.
 
 ## Merge rules (Guardrails, optional)
 
