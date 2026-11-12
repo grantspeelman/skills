@@ -342,8 +342,8 @@ category was out of 10: 10 is C, 5 is D and 0 is F.
 
 If the previous run's `rules_version` differs from the "Rules version" at the top of
 [references/scoring.md](references/scoring.md), or it has none, as with every older
-run, mark every category "rules changed since the last run", so a lower grade isn't
-read as a regression.
+run, say once in "Since the last run" that the rules changed since the last run, so a
+lower grade isn't read as a regression.
 
 Save these in `save_dir`, alongside the patches, context files and conventions list
 from step 4. They are what reruns compare against:

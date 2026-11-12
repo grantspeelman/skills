@@ -2,8 +2,8 @@
 
 Rules version: 1
 
-Bump this number only when grading rules change. `result.json` saves it as
-`rules_version`, so a rerun can tell a rule change from a regression.
+Bump it when a change to scoring.md or checks.md can move a grade. `result.json`
+saves it as `rules_version`, so a rerun can tell a rule change from a regression.
 
 ## Grading a category
 
