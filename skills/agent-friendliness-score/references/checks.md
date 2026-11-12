@@ -43,7 +43,7 @@ On a rerun, read only the earlier patches at this stage, not the earlier report.
 Starting from the highest numbered, test patches with `sandbox apply` and
 `sandbox restore`, and copy the first 7 that apply. Then ask for enough new bugs
 to make 10. That's always at least 3 new.
-Tests written against old patches would otherwise inflate the score.
+Tests written against old patches would otherwise inflate the grade.
 
 Give the subagent this prompt, with no other findings from this run:
 
@@ -118,16 +118,16 @@ Fewer than 5 valid bugs that ran means seeded bugs are "not measured".
 ### When the baseline fails
 
 - **Tests fail only because this run withheld a variable or credential:** that isn't a
-  suite failure, so never score it as Verification 0. If nothing passes, seeded bugs
+  suite failure, so never grade it as Verification F. If nothing passes, seeded bugs
   and test timings are not measured. If some tests pass, score what ran against the
   baseline, and report which tests couldn't run. If the docs don't mention the
   variable, the Feedback speed failure below still applies.
 - **`sandbox settle` printed `earlier_reports_removed_from_clone`, and only a link
   checker or similar fails on those files:** that comes from this run removing them, so it
-  isn't the repo's failure. Leave that failure out of the score.
+  isn't the repo's failure. Leave that failure out of the grades.
 - **Tests fail after following the repo's documented setup:** score it. Compare
   seeded runs against the baseline's failures. A suite where nothing passes catches
-  nothing, so Verification is 0.
+  nothing, so Verification is F.
 - **Setup needs something the docs don't mention:** that's a measured Feedback speed
   failure. Mark seeded bugs "not measured".
 - **The docs are right and this machine lacks it,** such as a toolchain: mark the
@@ -302,7 +302,7 @@ classic protection, which usually needs admin. Together they give the checks tha
 are **required to merge**.
 
 Compare these with the CI checks that caught planted violations and seeded bugs,
-using the workflow files. The planted violations decide the level. Report any
+using the workflow files. The planted violations decide the grade. Report any
 seeded-bug check that isn't required as evidence.
 
 Work this out in order, and stop at the first that applies:

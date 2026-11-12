@@ -1,11 +1,11 @@
 ---
 name: agent-friendliness-score
 description: >-
-  Score a repo out of 100 on how safely AI coding agents can work in it, and
-  end with the top three fixes. Measures whether the repo catches a plausible
-  but wrong change by planting bugs in a throwaway clone, timing the tests and
-  testing the docs with a fresh agent. Costs real time and agent usage. Work in
-  progress.
+  Grade a repo A to F in five categories on how safely AI coding agents can
+  work in it, and end with the top three fixes. Measures whether the repo
+  catches a plausible but wrong change by planting bugs in a throwaway clone,
+  timing the tests and testing the docs with a fresh agent. Costs real time and
+  agent usage. Work in progress.
 disable-model-invocation: true
 ---
 
@@ -14,8 +14,9 @@ disable-model-invocation: true
 > This skill is a work in progress.
 
 Score one repo on one question: **if an agent makes a plausible but wrong
-change, will the repo catch it?** Five categories, 20 points each:
-Verification, Feedback speed, Context, Consistency and Guardrails.
+change, will the repo catch it?** Five categories, each graded A, B, C, D or F:
+Verification, Feedback speed, Context, Consistency and Guardrails. There's no
+overall score.
 
 Every run is the full assessment. There are no lighter or deeper modes. Don't
 run mutation testing or replay old pull requests. A mutation score the repo
@@ -26,8 +27,8 @@ If the user named a package or path, score that. Otherwise score the whole repo.
 Read these before scoring. They are part of this procedure:
 
 - [references/checks.md](references/checks.md): how to run each measured check.
-- [references/scoring.md](references/scoring.md): what each score means, and
-  the verdicts.
+- [references/scoring.md](references/scoring.md): what each grade means, and
+  when the report says "Not proven".
 
 `scripts/sandbox.sh`, beside this file, manages the throwaway clone. Use it for
 every action on the clone, by absolute path, from inside the scored repo:
@@ -80,7 +81,7 @@ mistakes and a damaged state file, nothing stronger.
   Guardrails finding, labelled static, so name it in the plan. A clearly local
   default, such as Postgres from the repo's compose file, passes with no question,
   and [references/scoring.md](references/scoring.md) covers a service with no default.
-  With no default, the score comes from
+  With no default, the grade comes from
   [references/scoring.md](references/scoring.md), whatever the user answers. To run,
   never inherit a value: name the variable in the plan, and pass a safe value from the
   user with `sandbox run -- env NAME=value`, or clear it with `env -u NAME`. With no
@@ -228,23 +229,23 @@ Run these in order, as [references/checks.md](references/checks.md) describes:
 
 Run `sandbox restore` between changes to the clone. Don't use bare git commands
 to restore. If there are no tests, skip steps 1 to 4 and carry on with the rest.
-That's a measured result, 0 out of 20 for Verification.
+That's a measured result, an F for Verification.
 
 ## 5. Read the static evidence
 
 Now read the tests, and any earlier report for this repo. Collect the static
 evidence each category in [references/scoring.md](references/scoring.md) asks for.
 
-## 6. Score
+## 6. Grade
 
 Apply [references/scoring.md](references/scoring.md). Label every piece of evidence
 **static** or **measured**.
 
 ## 7. Choose the top three fixes
 
-Rank by points gained, and put Verification first on a tie. Each fix must name the
-metric it moves, the current and target values, and roughly how many points it's
-worth. Make fixes about this repo and about classes of mistake. "Add tests for
+Rank by grade steps gained, and put Verification first on a tie. Each fix must name
+the metric it moves, the current and target values, and the grade change, such as
+"Verification C to B". Make fixes about this repo and about classes of mistake. "Add tests for
 these ten patches" only games the rerun, so don't suggest it. A gap in this run's
 measurement isn't a fix either, so "install jscpd" or "move to GitHub Actions"
 can't rank. List those gaps as ceilings in the evidence. A fix must also pass the
@@ -255,23 +256,25 @@ fix. This skill only reports.
 
 Show the report in this shape. The data here is made up.
 
-```markdown
+````markdown
 # Agent-friendliness: payments-api at 4f2a91c
 
-**70/100: Agents can work here with review.**
+```text
+Verification    B  ███████████████░░░░░  7 of 10 seeded bugs caught
+Feedback speed  B  ███████████████░░░░░  relevant tests in 3m 40s
+Context         C  ██████████░░░░░░░░░░  5 of 6 answers correct  (ceiling: rules match not measured)
+Consistency     B  ███████████████░░░░░  4.1% duplication  (low confidence)
+Guardrails      B  ███████████████░░░░░  4 of 5 violations caught
+```
+
 This skill is a work in progress.
 
-| Category       | Score | Main evidence                                 |
-|----------------|-------|-----------------------------------------------|
-| Verification   | 15/20 | measured: 7 of 10 seeded bugs caught          |
-| Feedback speed | 15/20 | measured: relevant tests in 3m 40s            |
-| Context        | 10/20 (ceiling: rules match not measured) | measured: 5 of 6 answers correct |
-| Consistency    | 15/20 | measured, low confidence: 4.1% duplication    |
-| Guardrails     | 15/20 | measured: 4 of 5 planted violations caught    |
-
 ## Evidence
-One section per category. List each item with its label, static or measured,
-and each check marked not measured or N/A with the reason.
+One section per category, headed with its grade and whether it's measured or
+static only, such as "Context: C, measured (ceiling: rules match not measured)" or
+"Consistency: C (static only)".
+List each item with its label, static or measured, and each check marked not
+measured or N/A with the reason.
 Left out, with reason: merge rules, because classic protection returned 403.
 
 ## Seeded bugs
@@ -280,28 +283,41 @@ it. Name any bug "missed by relevant tests".
 
 ## Top three fixes
 1. Add request tests for permission checks on refund endpoints. Moves the
-   seeded catch rate from 70% to 90% (Verification 15 to 20, +5 points).
+   seeded catch rate from 70% to 90% (Verification B to A).
 
 ## Since the last run
-Total 60 to 70. Verification 10 to 15. Seeded bugs: 5 of 7 reused caught, 2 of 3
-new caught, 7 of 10 together. Commit 91bd03e to 4f2a91c.
-```
+Verification C to B. Other grades unchanged. Seeded bugs: 5 of 7 reused caught,
+2 of 3 new caught, 7 of 10 together. Commit 91bd03e to 4f2a91c.
+````
 
-If a category is static only, list it separately with its score out of 10, and
-show the total as measured points, such as `45/60 measured`.
-[references/scoring.md](references/scoring.md) sets the headline and verdict.
+The report opens with the grade card, one line per category: the name, the grade,
+a bar of 20 cells with 5 filled per grade step (A 20, B 15, C 10, D 5, F 0), the
+main evidence, and then any notes in brackets. The notes are a ceiling with what it
+blocks, such as `(ceiling: rules match not measured)`, `(static only)` and
+`(low confidence)`. Consistency is always low confidence. A static-only category
+goes no higher than C, and its Evidence heading shows it with the grade, such as
+`C (static only)`.
+
+If [references/scoring.md](references/scoring.md) calls for a "Not proven" line,
+put it straight under the card, before "This skill is a work in progress.", such as
+"Not proven: Verification was not measured, so the repo's ability to catch a wrong
+change is unknown."
 
 If `previous_run` is set, compare against it. It's the newest run that finished.
+Compare grades category by category, such as "Verification C to B", never a total.
+Older runs saved points instead of letters. A measured category was out of 20, and
+each 5 points is one grade step: 20 is A, 15 B, 10 C, 5 D and 0 F. A static-only
+category was out of 10: 10 is C, 5 is D and 0 is F.
 
 Save these in `save_dir`, alongside the patches and context files from step 4. They
 are what reruns compare against:
 
 - `report.md`: the report above.
-- `result.json`: commit, date, scores, whether each category is measured, raw
-  metrics, the merge state (required, not required or left out), the test isolation
-  result, setup findings, replaced questions, who wrote the bugs, the result for each
-  patch, and the exact commands and searches used, so the next run can compare and
-  repeat them.
+- `result.json`: commit, date, each category's grade as a letter and as points
+  (A 20 to F 0), whether each category is measured, raw metrics, the merge state
+  (required, not required or left out), the test isolation result, setup findings,
+  replaced questions, who wrote the bugs, the result for each patch, and the exact
+  commands and searches used, so the next run can compare and repeat them.
 
 Then run `sandbox finish --complete --report-to <folder>`, or leave out `--report-to`
 if the user chose the home folder only. This compares the scored repo first and
