@@ -47,6 +47,27 @@ report, and don't show a ceiling. When they can, they count like any other
 requirement. A repo on another CI system can still reach A. [checks.md](checks.md)
 sets the order for merge rules, including when only hooks caught violations.
 
+**Gates.** A coverage or duplication gate is a check that fails CI, on the whole
+codebase or on changed code. Both count the same. Codecov, Sonar and Qlty post a
+status rather than failing a job, so a failing status counts unless it's marked
+`informational`, and so does CI waiting on one, such as
+`sonar.qualitygate.wait=true`. The planted violation the gate targets, caught in CI,
+proves the gate exists. A gate that misses it still counts when the change met its
+target, as with an overall threshold, or a changed-code coverage target the change
+was above, and the miss only lowers the catch rate. It doesn't count when the change
+falls outside what it checks, such as an ignored path, a language it doesn't cover,
+a job that doesn't run, or a duplication scan of changed files only, because
+measured beats static. An overall gate rarely catches one small change, which is why
+the coverage and duplication fixes are gates on changed code.
+
+**Suppressions** are comments and config entries that silence a check, such as
+coverage exclusions or type-check escape hatches. Each section names its markers.
+Count them per 1,000 lines of production code, leaving out generated, vendored and
+test code, and save the searches for reruns. Suppressions are **checked** when a new
+one fails a check unless it gives a reason, or needs a required review, such as
+`CODEOWNERS` on the config with reviews required, or GitHub's delegated alert
+dismissal. If you can't read whether delegated dismissal is on, don't count it.
+
 ## Verification
 
 Can an agent prove a change is correct? "Catch rate" is the share of seeded bugs
@@ -121,30 +142,18 @@ report. The duplication gate and the copied-code result are concrete checks, so 
 evidence doesn't label them low confidence. A **competing concern** has two or more
 approaches and no preferred one named in the docs.
 
-A **duplication gate** is a duplication check that fails CI, on the whole codebase or
-on changed code, such as jscpd with a threshold, PMD CPD, pylint `duplicate-code`,
-golangci-lint `dupl`, flay, or SonarQube or Qlty duplication on new code. Both count
-the same. A Sonar or Qlty result counts when CI fails on it, such as with
-`sonar.qualitygate.wait=true`, or as a status, as for a coverage gate in Guardrails.
-Gate requirements are N/A where no production language has a duplication tool.
-
-The copied-code violation in [checks.md](checks.md) counts in the Guardrails catch
-rate like any violation, and is the measured evidence for the duplication gate. A copy
-caught in CI proves a gate exists. A gate that misses it still counts when the copy
-stayed within its threshold, as with an overall percentage, and the miss only lowers
-the catch rate. It doesn't count when the copy falls outside what it checks, such as
-an ignored path, a language it doesn't cover, a job that doesn't run or a scan of
-changed files only, because measured beats static. An overall percentage rarely
-catches one copy, which is why the duplication fix below is a gate on changed code.
+A **duplication gate** is a gate, as "Gates" above defines, on duplication, such as
+jscpd with a threshold, PMD CPD, pylint `duplicate-code`, golangci-lint `dupl`, flay,
+or SonarQube or Qlty duplication on new code. Gate requirements are N/A where no
+production language has a duplication tool. The copied-code violation in
+[checks.md](checks.md) counts in the Guardrails catch rate like any violation, and is
+the measured evidence for the gate.
 
 Record as static evidence the duplication tool, its threshold, whether CI fails on
-it, and whether it applies overall or to changed code. Also record suppressions,
-leaving out generated, vendored and test code: comments such as `jscpd:ignore-start`
-blocks, `# pylint: disable=duplicate-code` or `//nolint:dupl`, per 1,000 lines of
-production code; and separately, the production lines in paths the duplication
-config ignores. Suppressions are **checked** when a new one fails a check unless it
-gives a reason, or needs a required review, such as `CODEOWNERS` on the config with
-reviews required, which also covers new ignored paths. Save the searches for reruns.
+it, and whether it applies overall or to changed code. Also record suppressions, such
+as `jscpd:ignore-start` blocks, `# pylint: disable=duplicate-code` or `//nolint:dupl`,
+and separately the production lines in paths the duplication config ignores. A
+required review on the config also checks new ignored paths.
 
 | Grade | Static | Measured |
 |-------|--------|----------|
@@ -160,7 +169,7 @@ If the duplication count can't run, this category stops at C. Show it as a ceili
 **Duplication fix.** When there's no duplication gate, or the copied code got past
 it, suggest a gate on changed code that scans the whole tree, naming the tool for this
 stack, such as "run jscpd on the whole tree in CI and fail on clones in changed
-files" or "turn on golangci-lint `dupl` with `new-from-merge-base`". It moves the
+files" or "turn on golangci-lint `dupl` with `new-from-merge-base`". It can move the
 copied-code catch, the Guardrails catch rate and the Consistency grade, such as
 "Consistency C to B". When duplication suppressions aren't checked, name the check,
 such as `CODEOWNERS` on `.jscpd.json` with reviews required, for "Consistency B to A".
@@ -178,30 +187,20 @@ passes with no question. With no default, such as a required `DATABASE_URL` with
 value set, it fails unless the docs direct users to a local or test service. If the
 tests use no services, it's N/A.
 
-A **coverage gate** is a branch-coverage threshold that fails CI, on the whole
-codebase or on changed code, such as diff-cover, a Codecov patch target or a
-SonarQube new-code condition. Both count the same. Codecov and Sonar post a status
-rather than failing a job, so a failing status counts unless it's marked
-`informational`. Codecov's `target: auto` has no fixed number, so it can't meet 95%.
-A line-only threshold or a report that never fails isn't a gate. The untested branch
-(not the excluded one) caught in CI proves a gate exists. A gate that misses it still
-counts when the change met its target, as with an overall gate or a changed-code
-target the change was above, and the miss only lowers the catch rate. It doesn't
-count when the change falls outside what it checks, such as an ignored path, a
-language it doesn't cover or a job that doesn't run, because measured beats static.
-An overall gate below 100% rarely catches a small untested branch, which is why the
-coverage fix below is a gate on changed code. Gate requirements are N/A where the
-stack has no branch-coverage tool, or the repo has no tests, which Verification
-already covers. Not configuring the stack's tool doesn't make them N/A.
+A **coverage gate** is a gate, as "Gates" above defines, on branch coverage, such as
+diff-cover, a Codecov patch target or a SonarQube new-code condition. Codecov's
+`target: auto` has no fixed number, so it can't meet 95%. A line-only threshold or a
+report that never fails isn't a gate. The untested branch, not the excluded one, is
+the measured evidence for the gate. Gate requirements are N/A where the stack has no
+branch-coverage tool, or the repo has no tests, which Verification already covers.
+Not configuring the stack's tool doesn't make them N/A.
 
 Record as static evidence the coverage tool, whether branch coverage is on, the
 threshold, whether CI fails on it, and whether it applies overall or to changed code.
-Also record exclusions, leaving out generated, vendored and test code: exclusion
-comments, such as `# pragma: no cover` or `istanbul ignore`, per 1,000 lines of
-production code (counting lines in ignored paths too); and separately, the
-production lines in paths the coverage config ignores. Save the searches for reruns.
-Exclusions usually point to code that's hard to test, and they're the quickest way
-for an agent to pass a gate.
+Also record exclusion comments, such as `# pragma: no cover` or `istanbul ignore`,
+counting lines in ignored paths too, and separately the production lines in paths
+the coverage config ignores. Exclusions usually point to code that's hard to test,
+and they're the quickest way for an agent to pass a gate.
 
 A **type checker** counts when CI runs it and fails the build on an error, such as
 `tsc --noEmit`, mypy, pyright, Sorbet or PHPStan. A TypeScript build through esbuild,
@@ -225,12 +224,11 @@ N/A for Rust.
 Record as static evidence the type checker, whether CI fails on it, and its
 strictness, with the share of production lines opted out or checked loosely, such as
 by a Sorbet sigil below `strict` or a mypy per-module override. Also record escape
-hatches per 1,000 lines of production code, leaving out generated, vendored and test
-code: `any`, non-null `!`, `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`,
+hatches: `any`, non-null `!`, `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`,
 `# type: ignore`, file-level opt-outs such as `# mypy: ignore-errors` or
 `# pyright: basic`, `cast()` and `T.unsafe`, or the stack's equivalents. Leave out
-Go's `interface{}` and `any`, which are often idiomatic. Save the searches for reruns.
-Like exclusions, they let an agent silence a check instead of fixing the cause.
+Go's `interface{}` and `any`, which are often idiomatic. Like exclusions, they let an
+agent silence a check instead of fixing the cause.
 
 A language is **significant** if it has at least 5 files or 5% of lines. A file is a
 tracked file of that type, leaving out generated and vendored code, lockfiles and data
@@ -290,14 +288,11 @@ GitHub push protection is on. A CI scan alone is too late, because a pushed secr
 has leaked. Without a hook, unreadable push protection leaves this out.
 
 Record as static evidence each kind, with its tool or none, per production language
-and framework for code. Also record security suppressions per 1,000 lines of
-production code, such as `# nosec`, `nosemgrep`, `gitleaks:allow`, entries in a
-brakeman ignore file or gitleaks allowlist, and dismissed CodeQL alerts if `gh` can
-read them. They're **checked** when a new one fails a check unless it gives a reason,
-such as brakeman `--ensure-ignore-notes` or a lint rule requiring a justification, or
-needs a required review, such as `CODEOWNERS` on the ignore file with reviews
-required, or GitHub's delegated alert dismissal. This is N/A where no scanner the
-repo runs can be suppressed.
+and framework for code. Also record security suppressions, such as `# nosec`,
+`nosemgrep`, `gitleaks:allow`, entries in a brakeman ignore file or gitleaks
+allowlist, and dismissed CodeQL alerts if `gh` can read them. Brakeman
+`--ensure-ignore-notes`, or a lint rule requiring a justification, checks them.
+This is N/A where no scanner the repo runs can be suppressed.
 
 **Conventions enforced** is the share of tool-enforceable conventions that a lint
 rule or structural test enforces, in CI or a documented hook. [checks.md](checks.md)
@@ -316,36 +311,39 @@ are tool-enforceable and how many are judgment.
 |-------|--------|----------|
 | F | No linter, formatter or other mechanical check. | No such checks, or no violations caught. |
 | D | Tools are configured, but CI doesn't run them. | Catch rate above 0% and below 40%. |
-| C | CI lints and formats every significant language, secret scanning is covered, code scanning is covered where the stack has a tool for it, and CI runs a type checker where the stack has one. | Catch rate at least 40%, CI lints and formats every significant language, secret scanning is covered, code scanning is covered where the stack has a tool for it, and CI runs a type checker where the stack has one. |
-| B | | Catch rate at least 60%, CI lints and formats every significant language with established tools, each where one exists, with custom-rule support for each production language, conventions enforced at least 50% where it applies, every kind of security scanning covered where it applies, code scanning for each production language and framework, secrets checked before commit or push, test isolation where it applies, a coverage gate, a strict type checker where the stack has one, and the checks that caught violations are required to merge (optional). |
-| A | | Catch rate at least 85%, established tools with custom-rule support, as for B, conventions enforced at least 80% where it applies, every kind of security scanning covered and secrets checked before commit or push, as for B, with security suppressions checked where it applies, plus CI-enforced module boundary checks and performance budgets on key paths, each where it applies, test isolation where it applies, a coverage gate at 95% or more, every excluded untested branch caught where it applies (for example by a lint rule or a check on coverage config), a strict type checker where the stack has one, every suppressed type error caught where it applies, and the checks that caught violations are required to merge (optional). |
+| C | CI lints and formats every significant language, secret scanning is covered, code scanning is covered for at least one production language, where one has a tool, and CI runs a type checker where the stack has one. | Catch rate at least 40%, plus the static C requirements. |
+| B | | All of C, plus: catch rate at least 60%, established linters and formatters for every significant language, each where one exists, custom-rule support for each production language, conventions enforced at least 50% where it applies, every kind of security scanning covered where it applies, with code scanning for each production language and framework, secrets checked before commit or push (optional), test isolation where it applies, a coverage gate where it applies, a strict type checker where the stack has one, and the checks that caught violations required to merge (optional). |
+| A | | All of B, plus: catch rate at least 85%, conventions enforced at least 80% where it applies, security suppressions checked where it applies, CI-enforced module boundary checks and performance budgets on key paths, each where it applies, a coverage gate at 95% or more where it applies, every excluded untested branch caught where it applies, and every suppressed type error caught where it applies. |
 
 **Coverage fix.** When there's no coverage gate, or it's below 95%, suggest a
 branch-coverage gate on changed code at 95% or more, not a higher overall threshold.
-It moves the untested-branch catch and the Guardrails grade, such as "Guardrails C to
-B".
+It can move the untested-branch catch and the Guardrails grade, such as "Guardrails C
+to B". When an excluded untested branch got past, suggest a lint rule banning new
+exclusion comments, or `CODEOWNERS` on the coverage config with reviews required.
 
 **Type-check fix.** When CI runs no type checker, or it isn't strict, name the checker
 and setting for this stack, such as "turn on `strict` in tsconfig.json" or "add
-`mypy --strict` to CI". It can move the type-error catch, and moves the Guardrails
-grade, such as "Guardrails D to C" for a new checker or "C to B" for strict.
+`mypy --strict` to CI". It can move the type-error catch and the Guardrails grade,
+such as "Guardrails D to C" for a new checker or "C to B" for strict. When a
+suppressed type error got past, suggest `@typescript-eslint/ban-ts-comment`,
+`no-explicit-any`, or a Semgrep rule on `# type: ignore`.
 
 **Lint-rule fix.** When a significant language has no linter or formatter in CI, name
-the tool and the CI step, such as "add markdownlint and shellcheck to CI". It moves
-the Guardrails grade, such as "Guardrails D to C". When a tool-enforceable convention
-isn't enforced, suggest turning it into a lint rule, naming the tool, such as an
-ESLint `no-restricted-imports` entry, a RuboCop custom cop or a Semgrep rule beside
-Ruff. Prefer a linter CI already runs, and group the conventions one tool can take.
-With none documented, suggest writing down the conventions agents most often break
-and enforcing them the same way. It moves conventions enforced, the
+the tool and the CI step, such as "add markdownlint and shellcheck to CI". It can
+move the Guardrails grade, such as "Guardrails D to C". When a tool-enforceable
+convention isn't enforced, suggest turning it into a lint rule, naming the tool, such
+as an ESLint `no-restricted-imports` entry, a RuboCop custom cop or a Semgrep rule
+beside Ruff. Prefer a linter CI already runs, and group the conventions one tool can
+take. With none documented, suggest writing down the conventions agents most often
+break and enforcing them the same way. It can move conventions enforced, the
 documented-convention catch and the Guardrails grade, such as "Guardrails B to A".
-
-**Security fix.** When a kind of security scanning is missing, name the tool and where
-it runs for this stack, such as "add brakeman to CI" or "add gitleaks to CI and as a
-pre-commit hook", not "add security scanning". It can move the fake-credential catch,
-and moves the Guardrails grade, such as "Guardrails D to C" for secret or code
-scanning or "C to B" for the rest. When security suppressions aren't checked, name
-the setting, such as brakeman `--ensure-ignore-notes`, for "Guardrails B to A".
+**Security fix.** When a kind of security scanning is missing, name the tool and
+where it runs for this stack, such as "add brakeman to CI" or "add gitleaks to CI
+and as a pre-commit hook", not "add security scanning". It can move the
+fake-credential catch and the Guardrails grade, such as "Guardrails D to C" for
+secret or code scanning or "C to B" for the rest. When security suppressions aren't
+checked, name the setting, such as brakeman `--ensure-ignore-notes`, for "Guardrails
+B to A".
 
 Whether reviews are required and whether a `CODEOWNERS` file exists are evidence only,
 and don't change the grade. `CODEOWNERS` counts as evidence of review only if review

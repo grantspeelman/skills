@@ -151,9 +151,10 @@ search is the static evidence for test isolation in
 Run `sandbox find-report-folder`, passing the package path if there is one, for the
 plan's report location.
 
-**Don't read test files yet.** You may list their paths and read test config. To
-find service connections in test files, search so that only connection details
-print, and drop any credentials from what you repeat:
+**Don't read test files until the seeded bugs are written** (step 4, item 1).
+Until then, you may list their paths and read test config. To find service
+connections in test files, search so that only connection details print, and drop
+any credentials from what you repeat:
 
 ```bash
 git grep -n -I -o -i -E '[a-z+]+://[^[:space:]"'\'']+|[a-z_]*(host|endpoint|database_url|dsn)[a-z_]*' -- <test paths>
@@ -178,9 +179,9 @@ Seeded:       10 bugs, plus 10 planted violations, including untested code, type
               errors, a fake credential, copied code and documented conventions
 Agents:       3 fresh agents, one for the bugs and two for the docs check
 Other:        npx jscpd for duplication; diff-cover for the changed-code coverage
-              gate; read-only gh calls for CI history, merge rules and security
-              settings; documented pre-commit hook with gitleaks, for violations
-              the commands miss
+              gate; read-only gh calls for CI history, review comments, merge
+              rules and security settings; documented pre-commit hook with
+              gitleaks, for violations the commands miss
 Access:       save folder ok, temp ok, network ok, gh ok
 Budget:       unknown until the first test run. Stops at 60 minutes.
 Saved to:     ~/.agent-friendliness-score/payments-api-1a2b3c4d/ (full results)
@@ -248,13 +249,13 @@ Run `sandbox restore` between changes to the clone. Don't use bare git commands
 to restore. If there are no tests, skip steps 1 to 4 and carry on with the rest.
 That's a measured result, an F for Verification.
 
-## 5. Read the static evidence
+## 5. Read the rest of the static evidence
 
-Now read the tests, and any earlier report for this repo. Collect the static
-evidence each category in [references/scoring.md](references/scoring.md) asks for,
-including the counts of coverage exclusions, type-check escape hatches, and security
-and duplication suppressions, and which check enforces each tool-enforceable
-convention.
+Read any earlier report for this repo, and any tests you haven't read yet. Collect
+the static evidence each category in [references/scoring.md](references/scoring.md)
+asks for, including the counts of coverage exclusions, type-check escape hatches,
+and security and duplication suppressions, and which check enforces each
+tool-enforceable convention.
 
 ## 6. Grade
 
@@ -263,15 +264,18 @@ Apply [references/scoring.md](references/scoring.md). Label every piece of evide
 
 ## 7. Choose the top three fixes
 
-Rank by grade steps gained, and put Verification first on a tie. Each fix must name
-the metric it moves, the current and target values, and the grade change, such as
-"Verification C to B". Make fixes about this repo and about classes of mistake. "Add tests for
-these ten patches" only games the rerun, so don't suggest it. A gap in this run's
-measurement isn't a fix either, so "install jscpd" or "move to GitHub Actions"
-can't rank. List those gaps as ceilings in the evidence. A fix must also pass the
-evidence filter in [references/scoring.md](references/scoring.md), and, when a
-coverage, type-check, lint-rule, security or duplication fix ranks, use the form
-scoring.md gives. Don't apply any fix. This skill only reports.
+Each fix names the metric it can move, the current and target values, and what it
+does to the grade. It claims a grade change, such as "Verification C to B", only if
+it removes the last blocker for that grade. Otherwise it says how many it removes,
+such as "removes 1 of 3 blockers for B". Rank by grade steps gained, then by fewest
+blockers left, then Verification first. Make fixes about this repo and about classes
+of mistake. "Add tests for these ten patches" only games the rerun, so don't suggest
+it. A gap in this run's measurement isn't a fix either, so "install jscpd" or "move
+to GitHub Actions" can't rank. List those gaps as ceilings in the evidence. A fix
+must also pass the evidence filter in
+[references/scoring.md](references/scoring.md), and, when a coverage, type-check,
+lint-rule, security or duplication fix ranks, use the form scoring.md gives. Don't
+apply any fix. This skill only reports.
 
 ## 8. Report, save and clean up
 
@@ -302,13 +306,19 @@ Left out, with reason: merge rules, because classic protection returned 403.
 Who wrote them. A table of bug, risk category, caught or missed, and what caught
 it. Name any bug "missed by relevant tests".
 
+## Planted violations
+A table of violation type, caught or missed, and what caught it, or why it left the
+sample. On a rerun, the patches dropped and added. Name the fake credential only by
+provider and file.
+
 ## Top three fixes
-1. Add request tests for permission checks on refund endpoints. Moves the
+1. Add request tests for permission checks on refund endpoints. Can move the
    seeded catch rate from 70% to 90% (Verification B to A).
 
 ## Since the last run
-Verification C to B. Other grades unchanged. Seeded bugs: 5 of 7 reused caught,
-2 of 3 new caught, 7 of 10 together. Commit 91bd03e to 4f2a91c.
+Verification C to B. Guardrails B to C (rules changed since the last run). Other
+grades unchanged. Seeded bugs: 5 of 7 reused caught, 2 of 3 new caught, 7 of 10
+together. Commit 91bd03e to 4f2a91c.
 ````
 
 The report opens with the grade card, one line per category: the name, the grade,
@@ -330,11 +340,18 @@ Older runs saved points instead of letters. A measured category was out of 20, a
 each 5 points is one grade step: 20 is A, 15 B, 10 C, 5 D and 0 F. A static-only
 category was out of 10: 10 is C, 5 is D and 0 is F.
 
+Rules change between versions of this skill. If the previous run's `version` differs
+from this one, or it has none, mark each category whose rules changed "rules changed
+since the last run", so a lower grade isn't read as a regression. If you can't tell
+which changed, mark them all.
+
 Save these in `save_dir`, alongside the patches, context files and conventions list
 from step 4. They are what reruns compare against:
 
 - `report.md`: the report above.
-- `result.json`: commit, date, each category's grade as a letter and as points
+- `result.json`: commit, date, this skill's `version` from `plugin.json` in the
+  plugin's `.claude-plugin/` or `.codex-plugin/` folder, two levels above this
+  file, each category's grade as a letter and as points
   (A 20 to F 0), whether each category is measured, raw metrics, the merge state
   (required, not required or left out), push protection (on, off or left out), the
   test isolation result, setup findings, replaced questions, who wrote the bugs, the
