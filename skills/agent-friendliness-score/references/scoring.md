@@ -40,12 +40,12 @@ Two kinds of missing requirement are treated differently:
   `C (ceiling: rules match not measured)`. A ceiling is a gap in this run, so it
   never counts as a top fix.
 
-**Optional items.** Flaky rate, CI time and merge rules live on a hosting service,
-so they say more about access or the CI provider than about the repo. When they can't
-be reached, leave them out, name each with the reason in the report, and don't show a
-ceiling. When they can, they count like any other requirement. A repo on another CI
-system can still reach A. [checks.md](checks.md) sets the order for merge rules,
-including when only hooks caught violations.
+**Optional items.** Flaky rate, CI time, merge rules and GitHub security settings
+live on a hosting service, so they say more about access or the CI provider than about
+the repo. When they can't be reached, leave them out, name each with the reason in the
+report, and don't show a ceiling. When they can, they count like any other
+requirement. A repo on another CI system can still reach A. [checks.md](checks.md)
+sets the order for merge rules, including when only hooks caught violations.
 
 ## Verification
 
@@ -222,6 +222,43 @@ golangci-lint module plugins, ArchUnit and dependency-cruiser. Where the main li
 has no plugin API, such as Ruff or Clippy, Semgrep or ast-grep in CI provides custom
 rules. Custom checks may still run alongside these without failing B.
 
+**Security scanning** has five kinds. Each applies where the stack offers a practical
+tool for it, whether or not the repo configures one:
+
+- **Secrets:** gitleaks or trufflehog. Applies to every repo.
+- **Code:** a static analyser for each production language and framework, such as
+  brakeman for Rails, bandit or Semgrep for Python, gosec for Go, or CodeQL.
+- **Dependencies:** osv-scanner, npm audit, bundler-audit or Dependabot alerts, where
+  the repo has dependencies.
+- **CI workflows:** zizmor, where the repo has GitHub Actions.
+- **Infrastructure and containers:** checkov or trivy (formerly tfsec), where the
+  repo has Terraform, Kubernetes manifests or Dockerfiles that build a shipped or
+  deployed image, not dev-container or CI-only ones.
+
+A kind is **covered** when CI fails on the tool's findings. Dependabot alerts cover
+dependencies when on. A scanner whose results only go to GitHub code scanning, through
+default setup or a workflow (CodeQL, or any SARIF upload), covers code scanning only
+when the rules response has a `code_scanning` rule. Both are read as in
+[checks.md](checks.md). A fake credential the commands miss means secret scanning
+isn't covered, whatever the config says, and one they catch means it is. A catch by a
+hook alone counts only towards secrets checked before commit or push. A kind with no
+tool is not covered, unless the host is GitHub and the read that could cover it
+failed: the Dependabot alerts call for dependencies, or the rules call for code
+scanning. Then it's left out, like merge rules. **Secrets checked before commit or
+push** means a documented pre-commit or pre-push hook runs a secret scanner, or
+GitHub push protection is on. A CI scan alone is too late, because a pushed secret
+has leaked. Without a hook, unreadable push protection leaves this out.
+
+Record as static evidence each kind, with its tool or none, per production language
+and framework for code. Also record security suppressions per 1,000 lines of
+production code, such as `# nosec`, `nosemgrep`, `gitleaks:allow`, entries in a
+brakeman ignore file or gitleaks allowlist, and dismissed CodeQL alerts if `gh` can
+read them. They're **checked** when a new one fails a check unless it gives a reason,
+such as brakeman `--ensure-ignore-notes` or a lint rule requiring a justification, or
+needs a required review, such as `CODEOWNERS` on the ignore file with reviews
+required, or GitHub's delegated alert dismissal. This is N/A where no scanner the
+repo runs can be suppressed.
+
 **Conventions enforced** is the share of tool-enforceable conventions that a lint
 rule or structural test enforces, in CI or a documented hook. [checks.md](checks.md)
 says how to build the list, and how planted violations override it. It's N/A only
@@ -239,9 +276,9 @@ are tool-enforceable and how many are judgment.
 |-------|--------|----------|
 | F | No linter, formatter or other mechanical check. | No such checks, or no violations caught. |
 | D | Tools are configured, but CI doesn't run them. | Catch rate above 0% and below 40%. |
-| C | CI lints and formats every significant language, plus a security scanner and a type checker, each where the stack has one. | Catch rate at least 40%, CI lints and formats every significant language, and CI runs a type checker where the stack has one. |
-| B | | Catch rate at least 60%, CI lints and formats every significant language with established tools, each where one exists, with custom-rule support for each production language, conventions enforced at least 50% where it applies, CI runs a security scanner where the stack has one, test isolation where it applies, a coverage gate, a strict type checker where the stack has one, and the checks that caught violations are required to merge (optional). |
-| A | | Catch rate at least 85%, established tools with custom-rule support, as for B, conventions enforced at least 80% where it applies, plus CI-enforced module boundary checks and performance budgets on key paths, each where it applies, test isolation where it applies, a coverage gate at 95% or more, every excluded untested branch caught where it applies (for example by a lint rule or a check on coverage config), a strict type checker where the stack has one, every suppressed type error caught where it applies, and the checks that caught violations are required to merge (optional). |
+| C | CI lints and formats every significant language, secret scanning is covered, code scanning is covered where the stack has a tool for it, and CI runs a type checker where the stack has one. | Catch rate at least 40%, CI lints and formats every significant language, secret scanning is covered, code scanning is covered where the stack has a tool for it, and CI runs a type checker where the stack has one. |
+| B | | Catch rate at least 60%, CI lints and formats every significant language with established tools, each where one exists, with custom-rule support for each production language, conventions enforced at least 50% where it applies, every kind of security scanning covered where it applies, code scanning for each production language and framework, secrets checked before commit or push, test isolation where it applies, a coverage gate, a strict type checker where the stack has one, and the checks that caught violations are required to merge (optional). |
+| A | | Catch rate at least 85%, established tools with custom-rule support, as for B, conventions enforced at least 80% where it applies, every kind of security scanning covered and secrets checked before commit or push, as for B, with security suppressions checked where it applies, plus CI-enforced module boundary checks and performance budgets on key paths, each where it applies, test isolation where it applies, a coverage gate at 95% or more, every excluded untested branch caught where it applies (for example by a lint rule or a check on coverage config), a strict type checker where the stack has one, every suppressed type error caught where it applies, and the checks that caught violations are required to merge (optional). |
 
 **Coverage fix.** When there's no coverage gate, or it's below 95%, suggest a
 branch-coverage gate on changed code at 95% or more, not a higher overall threshold.
@@ -262,6 +299,13 @@ Ruff. Prefer a linter CI already runs, and group the conventions one tool can ta
 With none documented, suggest writing down the conventions agents most often break
 and enforcing them the same way. It moves conventions enforced, the
 documented-convention catch and the Guardrails grade, such as "Guardrails B to A".
+
+**Security fix.** When a kind of security scanning is missing, name the tool and where
+it runs for this stack, such as "add brakeman to CI" or "add gitleaks to CI and as a
+pre-commit hook", not "add security scanning". It can move the fake-credential catch,
+and moves the Guardrails grade, such as "Guardrails D to C" for secret or code
+scanning or "C to B" for the rest. When security suppressions aren't checked, name
+the setting, such as brakeman `--ensure-ignore-notes`, for "Guardrails B to A".
 
 Whether reviews are required and whether a `CODEOWNERS` file exists are evidence only,
 and don't change the grade. `CODEOWNERS` counts as evidence of review only if review

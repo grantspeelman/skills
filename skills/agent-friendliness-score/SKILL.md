@@ -103,6 +103,8 @@ mistakes and a damaged state file, nothing stronger.
 - The full report, `result.json`, patches and state stay in the save folder, which
   is always outside the scored repo. Paraphrase code and review comments where you
   can, because reports may quote private code. If you see a secret, don't repeat it.
+  The planted fake credential is invented, never a real one. Name it in reports only
+  by provider and file, never its value.
 - Earlier reports can bias a run, because they can list which seeded bugs survived.
   Don't read a file named like `agent-friendliness-report-20261103T155624Z.md` in the
   repo, and don't count one as documentation or evidence. If one was read, by you or
@@ -134,9 +136,11 @@ config: whether branch coverage is on, the threshold, whether CI fails on it, an
 whether it applies overall or to changed code. Note the type checker, whether it's
 strict and whether CI fails on it. List the significant languages, as
 [references/scoring.md](references/scoring.md) defines them, with the linter and
-formatter CI runs for each, and whether each is established or custom. Read the docs
-and agent instructions; step 4 builds the conventions list from them. Note whether the
-working tree has uncommitted changes, because only the commit gets scored.
+formatter CI runs for each, and whether each is established or custom. Note the
+security scanners for each kind scoring.md lists, in CI and in documented hooks, and
+whether a hook scans for secrets before commit or push. Read the docs and agent
+instructions; step 4 builds the conventions list from them. Note whether the working
+tree has uncommitted changes, because only the commit gets scored.
 
 Look for services the tests may touch: Docker Compose files, database and queue
 config, required environment variables, and HTTP calls without a stub library. This
@@ -160,8 +164,8 @@ Show one plan and wait for one confirmation:
 
 ```text
 Repo:         payments-api at 4f2a91c (uncommitted changes are not scored)
-Commands:     bin/test, bin/lint, bin/typecheck, from CI. Skipped: deploy,
-              publish-gem.
+Commands:     bin/test, bin/lint, bin/typecheck, bundle exec brakeman, from CI.
+              Skipped: deploy, publish-gem.
 Install:      bundle install in a throwaway clone (runs install scripts)
 Services:     Postgres from docker-compose.yml. No external URLs found.
 Local data:   tests write to the local database payments_test
@@ -170,11 +174,12 @@ Credentials:  unset by name for test runs: AWS_SECRET_ACCESS_KEY, GH_TOKEN
               tests can read these: ~/.aws, ~/.netrc
               This goes by name and path, so it can miss some.
 Seeded:       10 bugs, plus 10 planted violations, including untested code, type
-              errors and documented conventions
+              errors, a fake credential and documented conventions
 Agents:       3 fresh agents, one for the bugs and two for the docs check
 Other:        npx jscpd for duplication; diff-cover for the changed-code coverage
-              gate; read-only gh calls for CI history and merge rules; documented
-              pre-commit hook, for violations the commands miss
+              gate; read-only gh calls for CI history, merge rules and security
+              settings; documented pre-commit hook with gitleaks, for violations
+              the commands miss
 Access:       save folder ok, temp ok, network ok, gh ok
 Budget:       unknown until the first test run. Stops at 60 minutes.
 Saved to:     ~/.agent-friendliness-score/payments-api-1a2b3c4d/ (full results)
@@ -236,7 +241,7 @@ Run these in order, as [references/checks.md](references/checks.md) describes:
 6. Run the planted violations.
 7. Run the two fresh-agent checks.
 8. Run the consistency counts.
-9. Read CI history and merge rules with `gh`, if available.
+9. Read CI history, merge rules and security settings with `gh`, if available.
 
 Run `sandbox restore` between changes to the clone. Don't use bare git commands
 to restore. If there are no tests, skip steps 1 to 4 and carry on with the rest.
@@ -246,8 +251,8 @@ That's a measured result, an F for Verification.
 
 Now read the tests, and any earlier report for this repo. Collect the static
 evidence each category in [references/scoring.md](references/scoring.md) asks for,
-including the counts of coverage exclusions and type-check escape hatches, and which
-check enforces each tool-enforceable convention.
+including the counts of coverage exclusions, type-check escape hatches and security
+suppressions, and which check enforces each tool-enforceable convention.
 
 ## 6. Grade
 
@@ -263,8 +268,8 @@ these ten patches" only games the rerun, so don't suggest it. A gap in this run'
 measurement isn't a fix either, so "install jscpd" or "move to GitHub Actions"
 can't rank. List those gaps as ceilings in the evidence. A fix must also pass the
 evidence filter in [references/scoring.md](references/scoring.md), and, when a
-coverage, type-check or lint-rule fix ranks, use the form scoring.md gives. Don't
-apply any fix. This skill only reports.
+coverage, type-check, lint-rule or security fix ranks, use the form scoring.md gives.
+Don't apply any fix. This skill only reports.
 
 ## 8. Report, save and clean up
 
@@ -329,9 +334,10 @@ from step 4. They are what reruns compare against:
 - `report.md`: the report above.
 - `result.json`: commit, date, each category's grade as a letter and as points
   (A 20 to F 0), whether each category is measured, raw metrics, the merge state
-  (required, not required or left out), the test isolation result, setup findings,
-  replaced questions, who wrote the bugs, the result for each patch, and the exact
-  commands and searches used, so the next run can compare and repeat them.
+  (required, not required or left out), push protection (on, off or left out), the
+  test isolation result, setup findings, replaced questions, who wrote the bugs, the
+  result for each patch, and the exact commands and searches used, so the next run
+  can compare and repeat them.
 
 Then run `sandbox finish --complete --report-to <folder>`, or leave out `--report-to`
 if the user chose the home folder only. This compares the scored repo first and

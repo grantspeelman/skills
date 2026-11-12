@@ -25,10 +25,10 @@ it. An "unknown" estimate is fine, because the budget is the limit.
   counts as missed and is labelled "missed by relevant tests". A bug that never
   ran leaves the sample, and the report says so.
 - **Planted violations:** run the commands likely to catch each one first, such as
-  lint, format, typecheck or a hook. For the coverage types, that's the coverage
-  command: a changed-code gate needs only the tests covering the touched file, an
-  overall gate the full run. Run the full commands on any violation those miss,
-  while budget remains. A violation that never ran leaves the sample.
+  lint, format, typecheck, a security scanner or a hook. For the coverage types,
+  that's the coverage command: a changed-code gate needs only the tests covering the
+  touched file, an overall gate the full run. Run the full commands on any violation
+  those miss, while budget remains. A violation that never ran leaves the sample.
 
 ## Seeded bugs (Verification)
 
@@ -228,6 +228,9 @@ Plant 10 violations. Required types go in wherever they apply:
   description, because a rule an agent can satisfy without fixing the type doesn't
   count. Applies like the type error, where the language can hide a type error, so
   not Rust.
+- **fake credential:** a key or token in a real provider's format, such as an AWS
+  access key, invented for this run. Applies to every repo, because any repo can
+  leak a secret.
 
 Write each required type so only the check it targets can fail:
 
@@ -239,6 +242,17 @@ Write each required type so only the check it targets can fail:
   Only a check on the suppression may fail. Pick a site where the wrong type doesn't
   break the existing tests, such as a path they don't reach, or a mismatch that
   doesn't crash. If a test fails, replace the patch.
+- The fake credential passes everything else. Only a secret scanner may fail. Use
+  random characters in the provider's documented pattern, such as `AKIA` and 16 of
+  `[A-Z2-7]`, or `ghp_` and 36 letters and digits, for a provider that the repo's
+  scanner has a rule for, or gitleaks if the repo has no scanner. Never use a real
+  credential, placeholder words such as EXAMPLE, test, fake or dummy, or repeated or
+  sequential runs. Assign it to a secret-looking name, not a comment, in production
+  code or config the scanner reads, not a test fixture. Before planting, confirm
+  that scanner flags it with default rules in a scratch folder outside the clone. A
+  scanner that reports only verified secrets, such as trufflehog `--only-verified`,
+  can never flag an invented key, so the fake credential leaves the sample, and
+  coverage falls back to the config.
 
 Where the run produces a coverage report, confirm from it that the branch really is
 uncovered, and that the tool honours the exclusion form used. Where the repo
@@ -256,10 +270,19 @@ convention whenever the conventions list has a tool-enforceable rule:
 - a formatting break
 - a breach of a configured lint rule
 - a call across a module boundary the repo says is off limits
-- an obvious security flaw, such as unsanitised input in a query
-- a fake credential in a real provider's format, invented for this run
+- an obvious security flaw, such as unsanitised input in a query, for the stack's
+  code scanner or a test to catch. If the commands and hooks miss it and only a
+  scanner that can't run locally, such as CodeQL, could catch it, it leaves the
+  sample rather than being missed
+- an insecure workflow, where the repo has GitHub Actions, such as
+  `${{ github.event.* }}` input used in a `run:` step, which actionlint also flags,
+  or `pull_request_target` checking out the pull request's head. zizmor flags any
+  `pull_request_target`, so prefer the first where the baseline already uses it
 - a broken CI or config file, such as an invalid workflow or a config that fails its
   schema
+
+Don't plant vulnerable dependencies, because lockfile edits are messy. Dependency
+scanning is static evidence only.
 
 Types may repeat to reach 10, each repeat using a different rule or site. Prefer
 repeating documented convention, lint rule and security flaw. No type appears more
@@ -270,15 +293,21 @@ For each, edit the clone, run `sandbox capture violations/<NN>-<type>.patch`, th
 apply it and run the commands as CI runs them, likely ones first as "Budget" says.
 If the commands don't catch a violation and a documented hook runs a check for it,
 run that hook in the clone with `sandbox run`, as the plan lists. If a scanner or
-hook reads staged files, staging in the clone is fine. Then restore. On a rerun,
-reuse the earlier patches that still apply, and top up to 10, keeping each required
-type that applies.
+hook reads staged files, staging in the clone is fine. Run a scanner that reads only
+commits in its directory mode, such as `gitleaks dir`, `gitleaks detect --no-git`
+before v8.19, or trufflehog `filesystem`, passing the repo's config explicitly. It
+catches a violation only if it reports the planted file, so compare against a
+baseline scan, such as gitleaks `--baseline-path`, or scan only the changed files.
+Then restore. On a rerun, reuse the earlier patches that still apply, and top up to
+10, keeping each required type that applies.
 
 A violation counts as caught only if CI runs that check, or the documented setup
 installs a hook that does. A check that only prints a warning and still exits
-successfully doesn't catch a violation. A broken CI or config file counts as caught
-only if a check in the commands or a documented hook fails on it locally, because the
-clone has no CI of its own. Nothing here should execute a deploy or release step.
+successfully doesn't catch a violation. A broken CI or config file, an insecure
+workflow or a fake credential counts as caught only if a check in the commands or a
+documented hook fails on it locally, because the clone has no CI of its own. GitHub
+secret scanning and push protection can't catch a fake credential here, so they stay
+static evidence. Nothing here should execute a deploy or release step.
 
 A documented-convention violation updates its rule in the conventions list: missed
 means not enforced, and caught means enforced, whatever the static record said.
@@ -455,3 +484,28 @@ doesn't prove the branch is unprotected.
 Label this static, because it reads settings. It doesn't make Guardrails measured by
 itself. Also record whether reviews are required and whether a `CODEOWNERS` file
 exists.
+
+## Security settings (Guardrails, optional)
+
+Push protection, Dependabot alerts, CodeQL default setup and dismissed alerts are
+GitHub settings, not files. Run from the scored repo:
+
+```bash
+gh api repos/{owner}/{repo} --jq '.permissions.admin, .security_and_analysis'
+gh api repos/{owner}/{repo}/vulnerability-alerts
+gh api repos/{owner}/{repo}/code-scanning/default-setup
+gh api --paginate \
+  "repos/{owner}/{repo}/code-scanning/alerts?state=dismissed&per_page=100" \
+  --jq '.[].most_recent_instance.location.path'
+```
+
+The first shows whether you're an admin, and whether push protection is `enabled`.
+Without admin, `security_and_analysis` is `null`, which can't be read. The second
+returns 204 when Dependabot alerts are on, and 404 when they're off for an admin; a
+404 without admin can't be read. The third shows whether CodeQL default setup is
+`configured`, as evidence only. Results that only go to GitHub code scanning count
+when the rules response from merge rules has a `code_scanning` rule, as
+[scoring.md](scoring.md) says. The fourth prints each dismissed alert's path. Count
+those in production paths as security suppressions, and test ones separately. For
+the last two, a 403 or 404 can't be read. [scoring.md](scoring.md) says what's left
+out when a setting can't be read. Label these static.
