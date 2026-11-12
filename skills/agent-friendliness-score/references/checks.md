@@ -1,8 +1,9 @@
 # Measured checks
 
-Run these in order. `sandbox` means `bash <skill folder>/scripts/sandbox.sh`, with
-the absolute path, as in [SKILL.md](../SKILL.md), run from the scored repo. Paths
-like `seeded/` are inside `save_dir`. Save raw numbers for `result.json`.
+Step 4 of [SKILL.md](../SKILL.md) sets the order. `sandbox` means
+`bash <skill folder>/scripts/sandbox.sh`, with the absolute path, as in
+[SKILL.md](../SKILL.md), run from the scored repo. Paths like `seeded/` are inside
+`save_dir`. Save raw numbers for `result.json`.
 
 "Commands" below means CI's test, lint and typecheck steps, or the documented
 equivalents if there's no CI. Save them in `result.json`, and on a rerun use the
@@ -13,8 +14,10 @@ saved ones unless they no longer exist.
 The plan sets a time budget, 60 minutes by default. Never ask again to stay inside
 it. An "unknown" estimate is fine, because the budget is the limit.
 
-- Keep the last quarter of the budget for planted violations and fresh agents.
-  Stop running seeded bugs when you reach it.
+- Run the baseline with CI's coverage settings, so later steps can reuse its
+  coverage report.
+- Keep the last quarter of the budget for items 5 to 9 of step 4. Stop running
+  seeded bugs when you reach it.
 - **Suite over 5 minutes:** run each bug against its relevant tests first. Run the
   full commands only on bugs those tests miss, while budget remains.
 - **First baseline over a third of the budget:** skip the second baseline, so local
@@ -24,6 +27,17 @@ it. An "unknown" estimate is fine, because the budget is the limit.
 - A bug missed by its relevant tests, with no budget left for the full commands,
   counts as missed and is labelled "missed by relevant tests". A bug that never
   ran leaves the sample, and the report says so.
+- **Planted violations:** run the commands likely to catch each one first, such as
+  lint, format, typecheck, a security scanner, a duplication check or a hook. For
+  the coverage types, that's the coverage command: a changed-code gate needs only
+  the tests covering the touched file, an overall gate the full run. Then run the
+  full commands on any violation those miss. Plant the required types first. A
+  violation that never ran leaves the sample.
+- **Short of time in the last quarter,** drop work in this order: first, the full
+  commands on violations their likely checks missed; then, violations beyond the
+  first 5 that ran; then, a coverage type whose gate needs a full run that won't
+  fit, which leaves the sample. Drop fresh agents and required types last. Fresh
+  agents need the clean clone, so don't run them while a patch is applied.
 
 ## Seeded bugs (Verification)
 
@@ -43,7 +57,7 @@ On a rerun, read only the earlier patches at this stage, not the earlier report.
 Starting from the highest numbered, test patches with `sandbox apply` and
 `sandbox restore`, and copy the first 7 that apply. Then ask for enough new bugs
 to make 10. That's always at least 3 new.
-Tests written against old patches would otherwise inflate the score.
+Tests written against old patches would otherwise inflate the grade.
 
 Give the subagent this prompt, with no other findings from this run:
 
@@ -103,9 +117,10 @@ wrong behaviour. Record which check caught it. A type checker rejecting the wron
 behaviour is a catch.
 
 - These don't count as catches: gates that fail on any patch, such as
-  `git diff --exit-code` or a coverage threshold any change trips, style-only
-  failures, such as a lint error on an unused variable, and a warning from a check
-  that still exits successfully.
+  `git diff --exit-code`, style-only failures, such as a lint error on an unused
+  variable, and a warning from a check that still exits successfully.
+- A coverage gate failing on a seeded bug isn't a catch, and doesn't make the bug
+  invalid. Planted violations treat coverage differently; see there.
 - A bug is **invalid** and gets replaced if it has a syntax error or an undefined
   name, if it trips only those gates, or if it turns out not to change behaviour.
 - If a single test is the only new failure, run `sandbox restore` and rerun that
@@ -118,16 +133,16 @@ Fewer than 5 valid bugs that ran means seeded bugs are "not measured".
 ### When the baseline fails
 
 - **Tests fail only because this run withheld a variable or credential:** that isn't a
-  suite failure, so never score it as Verification 0. If nothing passes, seeded bugs
+  suite failure, so never grade it as Verification F. If nothing passes, seeded bugs
   and test timings are not measured. If some tests pass, score what ran against the
   baseline, and report which tests couldn't run. If the docs don't mention the
   variable, the Feedback speed failure below still applies.
 - **`sandbox settle` printed `earlier_reports_removed_from_clone`, and only a link
   checker or similar fails on those files:** that comes from this run removing them, so it
-  isn't the repo's failure. Leave that failure out of the score.
+  isn't the repo's failure. Leave that failure out of the grades.
 - **Tests fail after following the repo's documented setup:** score it. Compare
   seeded runs against the baseline's failures. A suite where nothing passes catches
-  nothing, so Verification is 0.
+  nothing, so Verification is F.
 - **Setup needs something the docs don't mention:** that's a measured Feedback speed
   failure. Mark seeded bugs "not measured".
 - **The docs are right and this machine lacks it,** such as a toolchain: mark the
@@ -172,32 +187,225 @@ have. These everyday system tools don't need pinning: `git`, `make`, `curl`, a s
 and its standard utilities, a C compiler and Docker. Anything else does. Tools bundled
 with a pinned tool are covered. Label the files static and the install notes measured.
 
+## Conventions (Guardrails)
+
+Build the conventions list before planting violations. Take the rules stated in agent
+instructions and docs, such as `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, style
+guides, architecture docs and editor rules such as `.cursor/rules/`, plus those from
+review history, below, which you read at this point. Never take rules from an earlier
+report. Only rules about the repo's content go in: code, tests, config, docs and file
+layout. Leave out rules about how an agent or person behaves, such as "never push" or
+"commit only when asked".
+
+Order the list so it can't be chosen: doc sources sorted by path, rules in the order
+they appear in each file, then review-history rules in comment order. Paraphrase each
+rule once, with its source, and classify it:
+
+- **tool-enforceable:** a lint rule or structural test could check it without
+  judgment, such as "don't import from `internal/` across packages" or "use the
+  logger, not `console.log`".
+- **judgment:** it needs a person to weigh it, such as "keep functions readable".
+
+Record for each tool-enforceable rule the lint rule or structural test that enforces
+it in CI or a documented hook, or none. A rule the formatter or a configured lint
+rule already covers counts. A planted result overrides this.
+
+Save the list in `guardrails/conventions.md`. On a rerun, reuse it: add rules the
+docs now state, drop rules they no longer state, keep review-history rules unless the
+docs contradict them, keep each classification unless the wording changed, and report
+what changed.
+
+**Review history** is one more source, if `gh` can read review comments. Run from
+the scored repo:
+
+```bash
+gh api "repos/{owner}/{repo}/pulls/comments?per_page=100&sort=created&direction=desc"
+```
+
+Add each convention corrected at least twice to the list, paraphrased, with review
+history as its source. If review history can't be read, the list comes from the docs
+alone; say so in the evidence.
+
 ## Planted violations (Guardrails)
 
-Plant 5 violations, picking from these where they apply:
+Plant 10 violations. List every tool this needs that the repo doesn't install, such
+as diff-cover, jscpd or gitleaks, on the plan's `Other:` line. Required types go in
+wherever they apply:
+
+- **untested branch:** about 1 to 10 lines of new production code with a branch no
+  test covers, such as an added `if` path or a new function. Applies where the repo
+  has tests and the stack has a branch-coverage tool, whether or not the repo
+  configures it.
+- **excluded untested branch:** the same, hidden behind a coverage exclusion, such as
+  `# pragma: no cover` or `/* istanbul ignore next */`. Applies like the untested
+  branch, where the tool has an exclusion mechanism.
+- **type error:** a call with an argument of the wrong type, or a missing or
+  misspelled field, in production code. Applies where the stack has a type checker,
+  whether or not the repo configures it.
+- **suppressed type error:** the same, hidden behind a suppression, such as
+  `@ts-expect-error`, `# type: ignore[<code>]` or a cast through `any`: `any(x).(T)`
+  in Go, `(T)(Object) x` in Java, `(T)(object) x` or `dynamic` in C#. Use the most
+  permissive form the repo's own rules accept, such as `@ts-expect-error` with a
+  description, because a rule an agent can satisfy without fixing the type doesn't
+  count. Applies like the type error, where the language can hide a type error, so
+  not Rust.
+- **fake credential:** a key or token in a real provider's format, such as an AWS
+  access key, invented for this run. Applies to every repo, because any repo can
+  leak a secret.
+- **copied code:** an existing production function of about 20 to 40 lines, or the
+  duplication tool's minimum size if that's larger, copied into another production
+  module with small renames, instead of reusing it. Applies wherever the repo has
+  production code in a language a duplication tool supports, such as jscpd.
+- **documented convention:** a breach of a tool-enforceable rule from the
+  conventions list. Take the first rule not planted before, in list order, and mark
+  it planted. Once every rule has been planted, start again from the top. Skip rules
+  already planted this run under another type. On a rerun, a reused patch usually
+  fills this type, so new picks happen only when it no longer applies. Applies
+  where the conventions list has a tool-enforceable rule.
+
+Write each required type so only the check it targets can fail:
+
+- The coverage types pass lint, formatting, type checks and the existing tests. Only
+  a check on coverage or the exclusion may fail.
+- The type error passes lint and formatting, apart from lint rules on types. A type
+  check or test failing on it is a catch, not a reason to replace it.
+- The suppressed type error passes everything, the type checker and tests included.
+  Only a check on the suppression may fail. Pick a site where the wrong type doesn't
+  break the existing tests, such as a path they don't reach, or a mismatch that
+  doesn't crash. If a test fails, replace the patch.
+- The fake credential passes everything else. Only a secret scanner may fail. Use
+  random characters in the provider's documented pattern, such as `AKIA` and 16 of
+  `[A-Z2-7]`, or `ghp_` and 36 letters and digits, for a provider that the repo's
+  scanner has a rule for, or gitleaks if the repo has no scanner. Never use a real
+  credential, placeholder words such as EXAMPLE, test, fake or dummy, or repeated or
+  sequential runs. Assign it to a secret-looking name, not a comment, in production
+  code or config the scanner reads, not a test fixture. Before planting, confirm
+  that scanner flags it with default rules, in a temp folder outside the clone that
+  you delete afterwards. A scanner that reports only verified secrets, such as
+  trufflehog `--only-verified`, can never flag an invented key, so the fake
+  credential leaves the sample, and coverage falls back to the config.
+- The copied code passes lint, formatting, type checks and the existing tests. Only
+  a duplication check may fail. Copy from a hotspot, and route one call site the
+  existing tests already reach through the copy, picking one where the original stays
+  covered by other tests, so behaviour and test results stay the same. Leave no
+  unused code, and no new uncovered lines where possible. Before planting, confirm
+  the copy is reported: with the repo's duplication config if it has one, in a
+  module that config scans and above its minimum tokens or lines; otherwise with
+  jscpd or the stack's tool on default settings.
+- The documented convention breaks only its rule.
+
+Where the run produces a coverage report, confirm from it that each untested branch,
+reused ones included, is uncovered, and that the tool honours the exclusion form
+used. Replace a patch whose branch is now covered. Where the stack has a type
+checker, confirm it reports the type error on strict settings, or in a file the repo
+checks strictly, and passes once the suppression is added. If a confirmation fails,
+replace the patch. If the repo's own settings miss a type error in a file it opts
+out of strict checking, that's a miss, not a reason to replace it.
+
+Fill the rest from these, each where it applies:
 
 - a formatting break
 - a breach of a configured lint rule
-- a breach of a convention the repo states in its docs or agent instructions
 - a call across a module boundary the repo says is off limits
-- an obvious security flaw, such as unsanitised input in a query
-- a fake credential in a real provider's format, invented for this run
+- an obvious security flaw, such as unsanitised input in a query, for the stack's
+  code scanner or a test to catch. If the commands and hooks miss it and only a
+  scanner that can't run locally, such as CodeQL, could catch it, it leaves the
+  sample rather than being missed
+- an insecure workflow, where the repo has GitHub Actions, such as
+  `${{ github.event.* }}` input used in a `run:` step, which actionlint also flags,
+  or `pull_request_target` checking out the pull request's head. zizmor flags any
+  `pull_request_target`, so prefer the first where the baseline already uses it
 - a broken CI or config file, such as an invalid workflow or a config that fails its
   schema
 
+Don't plant vulnerable dependencies, because lockfile edits are messy. Dependency
+scanning is static evidence only.
+
+Types may repeat to reach 10, each repeat using a different rule or site. Prefer
+repeating documented convention, lint rule and security flaw. No type appears more
+than twice. Fewer than 5 applicable types, or fewer than 5 violations that ran,
+means this check is "not measured".
+
 For each, edit the clone, run `sandbox capture violations/<NN>-<type>.patch`, then
-apply it and run the commands as CI runs them. If the commands don't catch a violation
-and a documented hook runs a check for it, run that hook in the clone with
-`sandbox run`, as the plan lists. If a scanner or hook reads staged files,
-staging in the clone is fine. Then restore. On a rerun, reuse the earlier patches
-that still apply, and top up to 5.
+apply it and run the commands as CI runs them, likely ones first as "Budget" says.
+If the commands don't catch a violation and a documented hook runs a check for it,
+run that hook in the clone with `sandbox run`, as the plan lists. If a scanner or
+hook reads staged files, staging in the clone is fine. Run a scanner that reads only
+commits in its directory mode, such as `gitleaks dir`, `gitleaks detect --no-git`
+before v8.19, or trufflehog `filesystem`, passing the repo's config explicitly. It
+catches a violation only if it reports the planted file, so compare against a
+baseline scan, such as gitleaks `--baseline-path`, or scan only the changed files.
+Then restore.
+
+On a rerun, fill the 10 in this order: each required type that applies, then the
+earlier patches that still apply, reusing an earlier patch for a required type where
+one applies. If they don't fit, drop reused patches of the other types in a fixed
+order, the most repeated type first, then by patch number, never by result. Then top
+up from "Fill the rest from these". The report names the patches dropped and added.
 
 A violation counts as caught only if CI runs that check, or the documented setup
 installs a hook that does. A check that only prints a warning and still exits
-successfully doesn't catch a violation. A broken CI or config file counts as caught
-only if a check in the commands or a documented hook fails on it locally, because the
-clone has no CI of its own. Nothing here should execute a deploy or release step.
-Fewer than 3 applicable violations means this check is "not measured".
+successfully doesn't catch a violation. A broken CI or config file, an insecure
+workflow or a fake credential counts as caught only if a check in the commands or a
+documented hook fails on it locally, because the clone has no CI of its own. GitHub
+secret scanning and push protection can't catch a fake credential here, so they stay
+static evidence. Nothing here should execute a deploy or release step.
+
+**Red baseline.** A coverage gate, type checker or duplication check that already
+fails on the baseline catches nothing, because a red gate protects nothing. There are
+two exceptions. One that keeps a baseline file of known errors and fails only on new
+ones can still catch. One that fails only because this run withheld a variable or
+credential makes the result not measured, as in "When the baseline fails". Tests,
+lint, formatters and scanners follow the seeded-bug rule instead: a new failure the
+baseline didn't have counts.
+
+A documented-convention violation updates its rule in the conventions list: missed
+means not enforced, and caught means enforced, whatever the static record said.
+Measured beats static.
+
+**Coverage gates.** The clone has no `origin` and no CI services, so evaluate a gate
+locally where that's deterministic. Run CI's coverage command, then apply the
+configured target: an overall threshold as the tool runs it, or branch coverage of
+the change against the settled baseline commit, such as
+`diff-cover coverage.xml --compare-branch=<baseline sha> --fail-under=<target>` or
+the tool's equivalent. Take the target from the repo's config, such as the patch
+target in `codecov.yml` or a Sonar new-code condition, and label the result
+"measured, evaluated locally against <config>". This is how a changed-code gate
+avoids the no-`origin` rule in step 3 of [SKILL.md](../SKILL.md). A Codecov status
+marked `informational` isn't a gate. If the target can't be reproduced, such as
+Codecov `target: auto` or a gate set only on a Sonar server, and no gate that could
+be evaluated caught it, the untested branch is not measured and leaves the sample.
+
+An untested branch counts as caught only if a coverage gate fails on it. Don't
+enlarge the patch to trip an overall gate. A gate failing on the baseline follows
+"Red baseline". An excluded untested branch counts as caught only if something fails
+because of the exclusion, such as a lint rule banning new exclusion comments or a
+check on changes to coverage config. A coverage gate that passes because the code is
+excluded misses it. "Gates" in [scoring.md](scoring.md) says what the result shows
+about the gate.
+
+**Type errors.** A type error counts as caught if a check in the commands, or a
+documented hook, fails on it. Record which: a type checker, the compiler, a lint rule
+on types, or a test failing at runtime. A test failure is a genuine catch, but the
+report says the tests caught it, not a type checker. A coverage gate failing on a
+type error isn't a catch. A type checker failing on the baseline follows "Red
+baseline". A suppressed type error counts as caught only if something fails because
+of the suppression, such as `@typescript-eslint/ban-ts-comment`, `no-explicit-any`,
+golangci-lint `forcetypeassert` or a Semgrep rule. A type checker that passes
+because of the suppression misses it.
+
+**Copied code.** It counts as caught only if a duplication check in the commands, or
+a documented hook, fails on it. A coverage gate failing on copied code isn't a catch.
+A check failing on the baseline follows "Red baseline". Don't enlarge the copy to
+trip an overall threshold. Run a changed-code gate as CI runs it, with the settled
+baseline commit as the base, such as `golangci-lint run --new-from-rev=<baseline sha>`
+for `dupl`. For jscpd, pylint `duplicate-code` or PMD CPD, scan the whole tree with
+the repo's config, such as jscpd `--reporters json`, and keep clones with a fragment
+in a changed file, or compare against a baseline report. Duplication tools find
+clones only within what they scan, so a gate that scans only changed files misses a
+copy of unchanged code. If a gate can't be reproduced, such as one evaluated only on
+a Sonar server, and no check that could run caught the copy, it leaves the sample.
+"Gates" in [scoring.md](scoring.md) says how the result counts.
 
 ## Fresh-agent checks (Context)
 
@@ -220,9 +428,14 @@ command proves a change to a given area works, where a given rule is enforced,
 which module owns a given concern, what a new endpoint must do.
 
 Where it applies, the six must include one each on: what an agent must not do without
-asking, which environment variables and services are needed to run the project, and
-why a notable design choice was made. For the last, choose the design choice with the
-most effect on a typical change, before checking whether the docs explain it.
+asking, which environment variables and services are needed to run the project, what
+kind of test a change to a named area needs and where it goes, why a notable design
+choice was made, and whether there's an existing helper for a common concern. For the
+design choice, choose the one with the most effect on a typical change, before
+checking whether the docs explain it. For the helper, choose a concern with a helper
+that has several call sites, such as date formatting, API errors or retries. The
+question names the concern, not the helper, and the key names the helper's module and
+function. This shows whether an agent can find code to reuse.
 
 If nothing in the repo answers a question, code included, keep it and say so in the
 key. An agent saying "the repo doesn't say" is honest but isn't correct, because this
@@ -230,7 +443,7 @@ measures what the repo tells an agent. A correct answer read from the code count
 such as a list of environment variables.
 
 Save both in `context/questions.md`. On a rerun, reuse them, updating the key if the
-code changed. If an older set lacks any of those three, replace the questions closest
+code changed. If an older set lacks any of those five, replace the questions closest
 in topic to the missing ones, never choosing by which questions failed. The report
 names the questions removed and the ones added. Give the agent only this:
 
@@ -265,27 +478,19 @@ check is N/A.
 This is the weakest measure. A count can't tell an unfinished migration from a
 deliberate choice, so label it low confidence.
 
-- **Duplication:** run `jscpd` or the stack's own tool if the plan listed it,
-  excluding generated and vendored code. If none can run, mark it "not measured".
+- **Duplication:** measure the percentage with `jscpd`, or another tool that reports
+  one, excluding generated and vendored code. pylint, `dupl` and PMD CPD don't report
+  a percentage. If the repo configures a duplication tool, measure again with its
+  ignored paths too, and grade that number if those paths hold under 10% of
+  production lines. Otherwise grade the number with default exclusions. Always save
+  the default number, so reruns compare like for like. If none can run, mark it
+  "not measured".
 - **Competing patterns:** choose at least 4 concerns that apply, such as error
   handling, validation, data access, HTTP calls, config, logging, auth checks or
   state. Count the distinct approaches with repeatable searches, and check whether
   the docs name a preferred one. Save the search commands, and reuse them on a rerun.
 - **Hotspots:** the hotspot list above, plus the 10 largest non-generated files.
   Note files on both lists. With shallow history, this is "not measured".
-
-## Review history (Guardrails, optional)
-
-"Corrected twice" counts only if `gh` can read review comments. Run from the scored
-repo:
-
-```bash
-gh api "repos/{owner}/{repo}/pulls/comments?per_page=100&sort=created&direction=desc"
-```
-
-Find conventions corrected at least twice, then check whether a lint rule or
-structural test now enforces each one. Paraphrase. If review history can't be read,
-this item is optional and left out, as [scoring.md](scoring.md) explains.
 
 ## Merge rules (Guardrails, optional)
 
@@ -302,7 +507,7 @@ classic protection, which usually needs admin. Together they give the checks tha
 are **required to merge**.
 
 Compare these with the CI checks that caught planted violations and seeded bugs,
-using the workflow files. The planted violations decide the level. Report any
+using the workflow files. The planted violations decide the grade. Report any
 seeded-bug check that isn't required as evidence.
 
 Work this out in order, and stop at the first that applies:
@@ -335,3 +540,28 @@ doesn't prove the branch is unprotected.
 Label this static, because it reads settings. It doesn't make Guardrails measured by
 itself. Also record whether reviews are required and whether a `CODEOWNERS` file
 exists.
+
+## Security settings (Guardrails, optional)
+
+Push protection, Dependabot alerts, CodeQL default setup and dismissed alerts are
+GitHub settings, not files. Run from the scored repo:
+
+```bash
+gh api repos/{owner}/{repo} --jq '.permissions.admin, .security_and_analysis'
+gh api repos/{owner}/{repo}/vulnerability-alerts
+gh api repos/{owner}/{repo}/code-scanning/default-setup
+gh api --paginate \
+  "repos/{owner}/{repo}/code-scanning/alerts?state=dismissed&per_page=100" \
+  --jq '.[].most_recent_instance.location.path'
+```
+
+The first shows whether you're an admin, and whether push protection is `enabled`.
+Without admin, `security_and_analysis` is `null`, which can't be read. The second
+returns 204 when Dependabot alerts are on, and 404 when they're off for an admin; a
+404 without admin can't be read. The third shows whether CodeQL default setup is
+`configured`, as evidence only. Results that only go to GitHub code scanning count
+when the rules response from merge rules has a `code_scanning` rule, as
+[scoring.md](scoring.md) says. The fourth prints each dismissed alert's path. Count
+those in production paths as security suppressions, and test ones separately. For
+the last two, a 403 or 404 can't be read. [scoring.md](scoring.md) says what's left
+out when a setting can't be read. Label these static.
