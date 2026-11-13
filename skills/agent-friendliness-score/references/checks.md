@@ -439,12 +439,12 @@ helper that has several call sites, such as date formatting, API errors or retri
 The question names the concern, not the helper, and the key names the helper's module
 and function. This shows whether an agent can find code to reuse.
 
-For the new file, ask "How should I add a new X?", with X the common file type, as
-[scoring.md](scoring.md) defines it, with the most files among the hotspots, then the
-most files overall. The key names the generator command or the reference example
-file. If the repo has neither, keep the question and say so in the key, as below.
-Picking any file of that type to copy isn't correct then, because nothing tells an
-agent which one is a good model.
+For the new file, ask "How should I add a new X?", where X is the first common file
+type in the ranking in "Generators" below. The key names its generator command or its
+documented example, as [scoring.md](scoring.md) defines them, whether or not the smoke
+test later passes, because this tests whether an agent can find the starting point.
+With both, either answer is correct. With neither, keep the question and say so in the
+key. Then no answer is correct, including choosing an existing file to copy.
 
 If nothing in the repo answers a question, code included, keep it and say so in the
 key. An agent saying "the repo doesn't say" is honest but isn't correct, because this
@@ -503,21 +503,30 @@ deliberate choice, so label it low confidence.
 
 ## Generators (Consistency)
 
-**Common file types.** In step 1 of [SKILL.md](../SKILL.md), group production
-files by role with `git ls-files`, using their folder and name pattern, such as
-`app/controllers/*_controller.rb` or `src/**/*.component.ts`. Each role with at least
-5 files that follow one pattern is a common file type. Save the patterns and counts,
-and reuse the patterns on a rerun. For each, note its generator and any doc that names
-a reference example file, as [scoring.md](scoring.md) defines them.
+**Common file types.** In step 1 of [SKILL.md](../SKILL.md), list the hotspots as
+"Writing them" says, then group production files with `git ls-files` by one folder and
+one name suffix, such as `app/controllers/` and `_controller.rb`, subfolders included,
+never a catch-all such as `src/**/*.ts`. Each group with at least 5 files is a common
+file type. Rank them by files among the hotspots, then by files overall, and score the
+first 3. For each, note its generator and documented example, as
+[scoring.md](scoring.md) defines them. Save the patterns, counts and ranking. On a
+rerun, reuse the saved patterns, add ones that now qualify, drop ones that no longer
+do, and report what changed.
 
-**Smoke test.** For each common file type with a generator, most files first, run
-the generator in the clone with `sandbox run`, with a new name such as `AfsSmoke` and
-default answers to any prompts. Then run the commands on its output: lint, typecheck,
-and the tests relevant to the new files, including any the generator wrote. Then run
-`sandbox restore`. Output that fails a check the baseline passed means a **stale
-generator**. Report it as a finding. The plan lists each generator command. If a
-generator, or the tests on its output, would reach services or the network beyond
-what the plan allows, don't run it, and mark that smoke test not measured. Save the
+**Smoke test.** For each scored type with a generator, in rank order, run the
+generator in the clone with `sandbox run`, with the name `AfsSmoke`. Run it
+non-interactively: pass answers as flags and close stdin, such as `</dev/null`. One
+that can't run without prompts is not measured. Then run lint, format, typecheck and
+the tests relevant to the new files, including any the generator wrote, then
+`sandbox restore`. Output that fails one of those where the baseline passed means a
+**stale generator**. Report it as a finding. Coverage and duplication gates don't
+count here.
+
+The plan lists each generator command. A generator that changes a schema, such as a
+migration, runs only against a throwaway database the plan lists, which you reset
+afterwards, because `sandbox restore` doesn't undo it. If there's none, or a generator
+or its tests would reach services or the network beyond what the plan allows, don't
+run it, and mark that smoke test not measured. Stop any services it starts. Save the
 commands and results for reruns, and label them measured.
 
 ## Merge rules (Guardrails, optional)

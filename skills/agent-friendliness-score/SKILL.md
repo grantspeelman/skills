@@ -142,9 +142,9 @@ formatter CI runs for each, and whether each is established or custom. Note the
 security scanners for each kind scoring.md lists, in CI and in documented hooks, and
 whether a hook scans for secrets before commit or push. Find the common file types,
 as "Generators" in [references/checks.md](references/checks.md) says, with each one's
-generator and any doc that names a reference example file. Read the docs and agent
-instructions; step 4 builds the conventions list from them. Note whether the working
-tree has uncommitted changes, because only the commit gets scored.
+generator and documented example. Read the docs and agent instructions; step 4
+builds the conventions list from them. Note whether the working tree has uncommitted
+changes, because only the commit gets scored.
 
 Look for services the tests may touch: Docker Compose files, database and queue
 config, required environment variables, and HTTP calls without a stub library. This
