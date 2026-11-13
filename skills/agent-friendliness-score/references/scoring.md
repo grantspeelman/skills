@@ -209,8 +209,9 @@ and matches the type's pattern.
 A common file type **has a working generator or a documented example** when its
 generator passed the smoke test in [checks.md](checks.md), or it has a documented
 example. A stale generator fails this for its type, even with an example, because an
-agent may still run it. When the generator's smoke test didn't run, such as for budget
-or network, a documented example still meets it, and without one it's not measured.
+agent may still run it. A generator that can't run without prompts doesn't count as
+working. When the generator's smoke test didn't run, such as for budget or network, a
+documented example still meets it, and without one it's not measured.
 
 Record as static evidence each common file type with its generator and documented
 example. In a static-only grade these are evidence and don't change the grade.

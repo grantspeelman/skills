@@ -180,11 +180,11 @@ are optional and left out, as [scoring.md](scoring.md) explains.
 
 Time the edit-time feedback hook and the scoped checks hook, as
 [scoring.md](scoring.md) defines them, on the production file used for relevant
-tests. A hook command is the repo's code,
-so run it only with `sandbox run` in the clone, and list it in the plan. Don't run a
-hook that deploys, publishes or reaches services beyond the plan; it's not measured.
-A hook that can't run because this machine lacks a tool the docs name is not measured
-too, as in "When the baseline fails". With no such hook, the requirement isn't met.
+tests. A hook command is the repo's code, so run it only with `sandbox run` in the
+clone, and list it in the plan. Don't run a hook that deploys, publishes or reaches
+services beyond the plan; it's not measured. A hook that can't run because this
+machine lacks a tool the docs name is not measured too, as in "When the baseline
+fails". With no such hook, the requirement isn't met.
 
 Write the hook to a script in `save_dir`, such as `hooks/post-edit.sh`, with its
 commands copied exactly from the settings or hook config, and time it inside the
