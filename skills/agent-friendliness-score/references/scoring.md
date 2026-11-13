@@ -167,11 +167,13 @@ one name suffix, such as controllers, forms, migrations, jobs or components. Onl
 where the repo has none. A **generator** is one the repo provides, such as plop,
 hygen, cookiecutter or Yeoman, or writes, such as Rails `lib/generators`, Angular
 schematics or Nx generators. A framework's stock generator counts only when the repo's
-docs name it for that file type, or the repo customises it, such as template overrides
-in `lib/templates/`, Rails `config.generators`, or a schematics collection or defaults
-in `angular.json`. A **documented example** is a file that docs, such as agent
-instructions or contributing docs, name as the reference for that file type, and that
-exists at the scored commit and matches the type's pattern.
+docs name it for that file type, or the repo customises it for that file type, such as
+template overrides in `lib/templates/`, Rails `config.generators` options for it, or
+a schematics collection or defaults in `angular.json`. A setting that only turns
+something off, such as `config.generators.system_tests = nil`, doesn't count. A
+**documented example** is a file that docs, such as agent instructions or contributing
+docs, name as the reference for that file type, and that exists at the scored commit
+and matches the type's pattern.
 
 A common file type **has a working generator or a documented example** when its
 generator passed the smoke test in [checks.md](checks.md), or it has a documented
@@ -188,7 +190,7 @@ example. In a static-only grade these are evidence and don't change the grade.
 | D | No stated conventions. | Duplication 10% or more, or more than two competing concerns. |
 | C | Conventions documented for most concerns, or a configured size or complexity limit. | Duplication under 10% or not measured, and at most two competing concerns. |
 | B | | Duplication under 5%, at most one competing concern, at most 3 non-generated files over about 1,000 lines, a duplication gate where it applies, and common file types have a working generator or a documented example, where it applies. |
-| A | | Duplication under 3%, no competing concerns, no file over about 1,000 lines on both hotspot lists, CI enforces a size or complexity limit, a duplication gate with its suppressions checked, and common file types with a working generator or a documented example, each where it applies. |
+| A | | Duplication under 3%, no competing concerns, no file over about 1,000 lines on both hotspot lists, CI enforces a size or complexity limit, a duplication gate with its suppressions checked, and every scored common file type with a working generator or a documented example, each where it applies. |
 
 If the duplication count can't run, this category stops at C. Show it as a ceiling,
 `C (ceiling: duplication not measured)`.

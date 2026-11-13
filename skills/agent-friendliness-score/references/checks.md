@@ -503,15 +503,16 @@ deliberate choice, so label it low confidence.
 
 ## Generators (Consistency)
 
-**Common file types.** In step 1 of [SKILL.md](../SKILL.md), list the hotspots as
-"Writing them" says, then group production files with `git ls-files` by one folder and
-one name suffix, such as `app/controllers/` and `_controller.rb`, subfolders included,
-never a catch-all such as `src/**/*.ts`. Each group with at least 5 files is a common
-file type. Rank them by files among the hotspots, then by files overall, and score the
-first 3. For each, note its generator and documented example, as
-[scoring.md](scoring.md) defines them. Save the patterns, counts and ranking. On a
-rerun, reuse the saved patterns, add ones that now qualify, drop ones that no longer
-do, and report what changed.
+**Common file types.** In step 1 of [SKILL.md](../SKILL.md), group production files
+with `git ls-files` by one folder and one name suffix, such as `app/controllers/` and
+`_controller.rb`, subfolders included, never a catch-all such as `src/**/*.ts`. Each
+group with at least 5 files is a common file type. Rank them by their files' summed
+change count from the hotspots' `git log` command in "Writing them", then by file
+count, and score the first 3. With shallow history, rank by file count. For each, note
+its generator and documented example, as [scoring.md](scoring.md) defines them. Save
+the patterns, counts and ranking. On a rerun, keep the saved 3, so grades compare like
+for like. Replace only a type that no longer qualifies, with the next in a fresh
+ranking, and report the change.
 
 **Smoke test.** For each scored type with a generator, in rank order, run the
 generator in the clone with `sandbox run`, with the name `AfsSmoke`. Run it
