@@ -112,9 +112,10 @@ it's a `PostToolUse` hook in `.claude/settings.json` whose matcher covers the
 file-edit tools, such as `Edit|Write`, reporting through exit 2 with stderr,
 `"decision": "block"` with a `reason`, or `hookSpecificOutput.additionalContext`,
 which all leave the edit in place. Another agent tool's after-edit hook counts too, if
-its output reaches that tool's agent, as that tool's documentation states. If it
-doesn't say, it doesn't count. A hook in `settings.local.json`, or one that stops the edit, such as a `PreToolUse`
-deny, doesn't count. It applies to every repo, because Claude Code can work on any
+its output reaches that tool's agent. If you can't confirm that from that tool's
+documentation, record it as static evidence and it doesn't count. A hook in
+`settings.local.json`, or one that stops the edit, such as a `PreToolUse` deny,
+doesn't count. It applies to every repo, because Claude Code can work on any
 repo.
 
 A **scoped checks hook** lints the changed files and runs only the tests related to
@@ -139,9 +140,9 @@ hook and tools for this stack, such as "switch the pre-commit hook to lint-stage
 `vitest related`" or "add a `Stop` hook in `.claude/settings.json` running `go test`
 on the changed packages". It can move Feedback speed, such as "Feedback speed C to B".
 When there's no edit-time feedback hook, or it failed, suggest "add a `PostToolUse`
-hook in `.claude/settings.json` running <the stack's linter or formatter> on the
-edited file", naming the tool, such as RuboCop, Ruff or ESLint, for "Feedback speed B
-to A".
+hook in `.claude/settings.json`, or the equivalent hook for the agent tool the repo's
+instructions target, running <the stack's linter or formatter> on the edited file",
+naming the tool, such as RuboCop, Ruff or ESLint, for "Feedback speed B to A".
 
 ## Context
 
@@ -166,9 +167,9 @@ agent settings, hooks, skills and editor rules, such as `.claude/settings.json`,
 subdirectories, and whether a second agent tool would pick up the same instructions.
 A `CLAUDE.md` with no `AGENTS.md` leaves Codex without them. When scoring a package,
 check for instruction files that apply to that package's path. Feedback speed grades
-the hooks it defines. Also record whether the instructions or docs describe a testing
-approach, such as TDD, writing testable code, where tests go and what kind of tests
-to write.
+the hooks defined there. Also record whether the instructions or docs describe a
+testing approach, such as TDD, writing testable code, where tests go and what kind of
+tests to write.
 
 ## Consistency
 
@@ -219,7 +220,7 @@ example. In a static-only grade these are evidence and don't change the grade.
 | F | | Duplication over 15%, and at least two concerns have three or more approaches. |
 | D | No stated conventions. | Duplication 10% or more, or more than two competing concerns. |
 | C | Conventions documented for most concerns, or a configured size or complexity limit. | Duplication under 10% or not measured, and at most two competing concerns. |
-| B | | Duplication under 5%, at most one competing concern, at most 3 non-generated files over about 1,000 lines, a duplication gate where it applies, and common file types have a working generator or a documented example, where it applies. |
+| B | | Duplication under 5%, at most one competing concern, at most 3 non-generated files over about 1,000 lines, a duplication gate where it applies, and every scored common file type has a working generator or a documented example, where it applies. |
 | A | | Duplication under 3%, no competing concerns, no file over about 1,000 lines on both hotspot lists, CI enforces a size or complexity limit, a duplication gate with its suppressions checked, and every scored common file type with a working generator or a documented example, each where it applies. |
 
 If the duplication count can't run, this category stops at C. Show it as a ceiling,
@@ -238,7 +239,8 @@ example, suggest naming one reference example file for each common file type in
 `AGENTS.md` or `CLAUDE.md`, or adding a generator, naming the tool for this stack,
 such as a Rails generator in `lib/generators` or a plop template. When a generator is
 stale, name it and the check its output failed, and suggest fixing or removing its
-templates. It can move the Consistency grade, such as "Consistency C to B".
+templates. When a generator needs prompts, suggest adding flags for its answers or
+naming an example file. It can move the Consistency grade, such as "Consistency C to B".
 
 ## Guardrails
 

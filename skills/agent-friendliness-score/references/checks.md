@@ -33,14 +33,17 @@ it. An "unknown" estimate is fine, because the budget is the limit.
   the tests covering the touched file, an overall gate the full run. Then run the
   full commands on any violation those miss. Plant the required types first. A
   violation that never ran leaves the sample.
-- **Feedback hooks** run with item 3 of step 4, before the last quarter. Stop a hook
-  still running at 5 minutes, which fails its time limit.
+- **Feedback hooks** run with item 3 of step 4, before the last quarter. Cap the cold
+  run at about 2 minutes, and the judged run at its limit: 5 seconds for the
+  edit-time hook, 60 seconds for the scoped checks hook. Hitting the cap fails. Skip
+  the judged run when the cold run took more than twice the limit, because it fails.
 - **Short of time in the last quarter,** drop work in this order: first, the full
   commands on violations their likely checks missed; then, violations beyond the
   first 5 that ran; then, a coverage type whose gate needs a full run that won't
-  fit, which leaves the sample; then, generator smoke tests beyond the first. Drop
-  fresh agents and required types last. Fresh agents need the clean clone, so don't
-  run them while a patch is applied or generator output is in the clone.
+  fit, which leaves the sample; then, generator smoke tests beyond the first; then,
+  the first generator smoke test. Drop fresh agents and required types last. Fresh
+  agents need the clean clone, so don't run them while a patch is applied or
+  generator output is in the clone.
 
 ## Seeded bugs (Verification)
 
@@ -177,28 +180,28 @@ are optional and left out, as [scoring.md](scoring.md) explains.
 
 Time the edit-time feedback hook and the scoped checks hook, as
 [scoring.md](scoring.md) defines them, on the production file used for relevant
-tests, or the top hotspot if there are no tests. A hook command is the repo's code,
+tests. A hook command is the repo's code,
 so run it only with `sandbox run` in the clone, and list it in the plan. Don't run a
 hook that deploys, publishes or reaches services beyond the plan; it's not measured.
 A hook that can't run because this machine lacks a tool the docs name is not measured
 too, as in "When the baseline fails". With no such hook, the requirement isn't met.
 
-Write the hook's command to a script in `save_dir`, such as `hooks/post-edit.sh`,
-copied exactly from the settings or hook config. The script reads the payload once,
+Write the hook to a script in `save_dir`, such as `hooks/post-edit.sh`, with its
+commands copied exactly from the settings or hook config, and time it inside the
+script with a sub-second clock. For agent hooks, the script reads the payload once,
 with `payload=$(cat)`, and pipes it to each hook that matches the event, run in
 parallel with `&` and then `wait`, as Claude Code does. It saves each hook's exit
 code, stdout and stderr separately, and each hook is judged on its own reporting
-channels. It times the whole: `date +%s.%N` before starting the hooks and after
-`wait`, or `perl -MTime::HiRes=time -e 'print time'` where `date` lacks `%N`, with
-the difference printed to stderr. Run it twice, running `sandbox restore` and redoing
-the change between runs, and judge and time the second run, so a cold cache doesn't
-count. If a hook's cache file isn't ignored by git, restore deletes it, so note that
-both runs were cold. Save the scripts, payloads, patches and times, and reuse them on
-a rerun.
+channels. For a git hook, the script runs the one command git would run, with
+`</dev/null`. Run the script twice, running `sandbox restore` and redoing the change
+between runs, and judge and time the second run, so a cold cache doesn't count.
+"Budget" caps both runs. If a hook's cache file isn't ignored by git, restore deletes
+it, so note that both runs were cold. Save the scripts, payloads, patches and times.
+On a rerun, reuse them unless the hook's command or event changed; then rewrite them
+and say so in the report.
 
-**Edit-time feedback hook.** Reuse `hooks/edit.patch`, or a lint or formatting patch
-in `violations/`, that fits the hook's tool. Otherwise plant a lint violation it
-flags, or a formatting break if it only formats, and run
+**Edit-time feedback hook.** Plant a lint violation the hook flags, or a formatting
+break if it only formats, and run
 `sandbox capture hooks/edit.patch`. Apply it, then send the script the payload its
 agent tool sends, naming that file, with the project dir set to the clone. For Claude
 Code, save an empty `hooks/transcript.jsonl` and this payload, with a `tool_name` the
@@ -236,11 +239,11 @@ a Claude Code `Stop` hook that's:
 It meets the requirement if it lints the changed file, selects tests by the change,
 and takes under 60 seconds and either at most half the full run in "Timings" or under
 10 seconds. Judge the selection from the command, such as `vitest related`,
-`--findRelatedTests` or `go test` on the changed packages, and confirm from its output
-that it ran fewer tests than the full run. A full run that was stopped took at least
-as long as it ran. Failing on the change is fine. If the repo has both kinds, time
-each, and either one passing meets it. Then run `sandbox restore`, which discards the
-staged change with hooks off.
+`--findRelatedTests` or `go test` on the changed packages, and confirm from its
+output that it ran fewer tests than the full run. If the baseline was stopped, its
+full-run time is at least how long it ran. Failing on the change is fine. If the repo
+has both kinds, time each, and either one passing meets it. Then run
+`sandbox restore`, which discards the staged change with hooks off.
 
 ## Reproducible setup (Feedback speed)
 
@@ -515,7 +518,9 @@ type in the ranking in "Generators" below. The key names its generator command o
 documented example, as [scoring.md](scoring.md) defines them, whether or not the smoke
 test later passes, because this tests whether an agent can find the starting point.
 With both, either answer is correct. With neither, keep the question and say so in the
-key. Then no answer is correct, including choosing an existing file to copy.
+key. Then no answer is correct, including choosing an existing file to copy. On a
+rerun, X is the first of the saved 3; if it was replaced, the report names the
+question as replaced.
 
 If nothing in the repo answers a question, code included, keep it and say so in the
 key. An agent saying "the repo doesn't say" is honest but isn't correct, because this
@@ -588,7 +593,8 @@ ranking, and report the change.
 **Smoke test.** For each scored type with a generator, in rank order, run the
 generator in the clone with `sandbox run`, with the name `AfsSmoke`. Run it
 non-interactively: pass answers as flags and close stdin, such as `</dev/null`. One
-that can't run without prompts is not measured. Then run lint, format, typecheck and
+that can't run without prompts doesn't count as working for its type, because an
+agent can't answer prompts either. Then run lint, format, typecheck and
 the tests relevant to the new files, including any the generator wrote, then
 `sandbox restore`. Output that fails one of those where the baseline passed means a
 **stale generator**. Report it as a finding. Coverage and duplication gates don't
@@ -599,7 +605,8 @@ migration, runs only against a throwaway database the plan lists, which you rese
 afterwards, because `sandbox restore` doesn't undo it. If there's none, or a generator
 or its tests would reach services or the network beyond what the plan allows, don't
 run it, and mark that smoke test not measured. Stop any services it starts. Save the
-commands and results for reruns, and label them measured.
+commands and results, and label them measured. On a rerun, reuse the saved commands
+unless the generator changed; then rewrite them and say so in the report.
 
 ## Merge rules (Guardrails, optional)
 

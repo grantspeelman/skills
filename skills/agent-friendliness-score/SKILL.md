@@ -253,9 +253,8 @@ Run these in order, as [references/checks.md](references/checks.md) describes:
 10. Read CI history, merge rules and security settings with `gh`, if available.
 
 Run `sandbox restore` between changes to the clone. Don't use bare git commands
-to restore. If there are no tests, skip items 1 to 4, apart from the feedback hooks
-in item 3, and carry on with the rest. That's a measured result, an F for
-Verification.
+to restore. If there are no tests, skip items 1 to 4 and carry on with the rest.
+That's a measured result, an F for Verification.
 
 ## 5. Read the rest of the static evidence
 
@@ -361,9 +360,10 @@ from step 4. They are what reruns compare against:
   and as points (A 20 to F 0), whether each category is measured, raw metrics, the
   merge state (required, not required or left out), push protection (on, off or left
   out), the test isolation result, setup findings, replaced questions, who wrote the
-  bugs, the result for each patch, the common file types with their generators and
-  example files, the generator smoke-test results, the feedback hooks with their
-  commands and times, and the exact commands and searches used, so the next run can
+  bugs, the result for each patch, the common file types with their patterns, counts,
+  ranking, generators and example files, the generator smoke-test results, each
+  feedback hook's event, command, result (met, failed or not measured), how it
+  reported and time, and the exact commands and searches used, so the next run can
   compare and repeat them.
 
 Then run `sandbox finish --complete --report-to <folder>`, or leave out `--report-to`
