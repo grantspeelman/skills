@@ -13,7 +13,7 @@ disable-model-invocation: true
 
 > This skill is a work in progress.
 
-Score one repo on one question: **is the repo agent friendly, and does it follow
+Score one repo on this question: **is the repo agent friendly, and does it follow
 practices that help code get built with agents?** Part of that is whether the repo
 catches a plausible but wrong change, which Verification and Guardrails mainly
 measure. Five categories, each graded A, B, C, D or F: Verification, Feedback
