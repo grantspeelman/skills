@@ -253,8 +253,9 @@ Run these in order, as [references/checks.md](references/checks.md) describes:
 10. Read CI history, merge rules and security settings with `gh`, if available.
 
 Run `sandbox restore` between changes to the clone. Don't use bare git commands
-to restore. If there are no tests, skip steps 1 to 4 and carry on with the rest.
-That's a measured result, an F for Verification.
+to restore. If there are no tests, skip items 1 to 4, apart from the feedback hooks
+in item 3, and carry on with the rest. That's a measured result, an F for
+Verification.
 
 ## 5. Read the rest of the static evidence
 

@@ -181,37 +181,63 @@ tests. A hook command is the repo's code, so run it only with `sandbox run` in t
 clone, and list it in the plan. Don't run a hook that deploys, publishes or reaches
 services beyond the plan; it's not measured. A hook that can't run because this
 machine lacks a tool the docs name is not measured too, as in "When the baseline
-fails". With no such hook, the requirement isn't met. The time is `sandbox run`'s
-`elapsed_seconds`. Save the commands, patches and times, and reuse them on a rerun.
+fails". With no such hook, the requirement isn't met.
+
+Write the hook's command to a script in `save_dir`, such as `hooks/post-edit.sh`,
+copied exactly from the settings or hook config. When several hooks match the same
+event, put them all in the script, one after another, and judge their output
+together, as the agent tool would. Time it inside the script: take `date +%s.%N`
+before and after the hook commands, or `perl -MTime::HiRes=time -e 'print time'`
+where `date` lacks `%N`, and print the difference to stderr. Run each hook
+twice, running `sandbox restore` and redoing the change between runs, and judge and
+time the second run, so a cold cache doesn't count. Save the scripts, payloads,
+patches and times, and reuse them on a rerun.
 
 **Edit-time feedback hook.** Reuse `hooks/edit.patch`, or a lint or formatting patch
 in `violations/`, that fits the hook's tool. Otherwise plant a lint violation it
 flags, or a formatting break if it only formats, and run
-`sandbox capture hooks/edit.patch`. Apply it, then send the hook the payload its agent
-tool sends, naming that file, with the project dir set to the clone. For Claude Code:
+`sandbox capture hooks/edit.patch`. Apply it, then send the script the payload its
+agent tool sends, naming that file, with the project dir set to the clone. For Claude
+Code, save an empty `hooks/transcript.jsonl` and this payload, with a `tool_name` the
+hook's matcher matches, as `hooks/post-edit.json`:
 
-```bash
-printf '%s' '{"hook_event_name":"PostToolUse","tool_name":"Edit","cwd":"<sandbox>","tool_input":{"file_path":"<sandbox>/<file>"}}' \
-  | sandbox run -- env CLAUDE_PROJECT_DIR=<sandbox> bash -c '<hook command>'
+```json
+{"session_id":"afs-hooks","transcript_path":"<save_dir>/hooks/transcript.jsonl",
+ "cwd":"<sandbox>","hook_event_name":"PostToolUse","tool_name":"Edit",
+ "tool_input":{"file_path":"<sandbox>/<file>"},
+ "tool_response":{"filePath":"<sandbox>/<file>","success":true}}
 ```
 
-Only `printf` runs outside the clone. It meets the requirement if it reports the
-problem, or the fix it made, as [scoring.md](scoring.md) says, the planted change is
-still there apart from formatting the hook fixed, and it took under 5 seconds. Then
-run `sandbox restore`.
+```bash
+sandbox run -- env CLAUDE_PROJECT_DIR=<sandbox> bash <save_dir>/hooks/post-edit.sh \
+  < <save_dir>/hooks/post-edit.json
+```
+
+It meets the requirement if it reports the problem, or the fix it made, as
+[scoring.md](scoring.md) says, the planted change is still there apart from
+formatting the hook fixed, and it took under 5 seconds. Then run `sandbox restore`.
 
 **Scoped checks hook.** Make a one-line change that keeps behaviour, such as renaming
 a local variable, and run `sandbox capture hooks/change.patch`. Apply it. For a
-pre-commit hook, stage it with `sandbox run -- git add -A`, then run the hook without
-committing, such as `lefthook run pre-commit`, `pre-commit run` or the hook file the
-documented setup installed in the clone, through `sandbox run`. For an agent
-end-of-turn hook, send its payload as above, such as
-`{"hook_event_name":"Stop","stop_hook_active":false,"cwd":"<sandbox>"}` for Claude
-Code. It meets the requirement if it lints the changed file, runs tests selected by
-the change, and takes under 60 seconds and at most half the full run in "Timings". A
-full run that was stopped took at least as long as it ran. Failing on the change is
-fine. If the repo has both kinds, time each, and either one passing meets it. Then
-run `sandbox restore`, which discards the staged change with hooks off.
+pre-commit hook, stage it with `sandbox run -- git add -A`, then run the script
+without committing. Its command is how git would run the hook, such as
+`lefthook run pre-commit`, `pre-commit run` or the hook file the documented setup
+installed in the clone. For an agent end-of-turn hook, send its payload as above. For
+a Claude Code `Stop` hook that's:
+
+```json
+{"session_id":"afs-hooks","transcript_path":"<save_dir>/hooks/transcript.jsonl",
+ "cwd":"<sandbox>","hook_event_name":"Stop","stop_hook_active":false}
+```
+
+It meets the requirement if it lints the changed file, selects tests by the change,
+and takes under 60 seconds and either at most half the full run in "Timings" or under
+10 seconds. Judge the selection from the command, such as `vitest related`,
+`--findRelatedTests` or `go test` on the changed packages, and confirm from its output
+that it ran fewer tests than the full run. A full run that was stopped took at least
+as long as it ran. Failing on the change is fine. If the repo has both kinds, time
+each, and either one passing meets it. Then run `sandbox restore`, which discards the
+staged change with hooks off.
 
 ## Reproducible setup (Feedback speed)
 
