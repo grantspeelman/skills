@@ -132,19 +132,20 @@ state file records it. Then remove the state file it names. If no `leftover_clon
 is listed, remove the state file only and leave any folder alone.
 
 Find the stack, CI's test, lint and typecheck commands, how the repo documents its
-setup, and any hooks the documented setup installs. Note the coverage tool and its
-config: whether branch coverage is on, the threshold, whether CI fails on it, and
-whether it applies overall or to changed code. Note the duplication tool the same
-way, with the paths its config ignores. Note the type checker, whether it's strict
-and whether CI fails on it. List the significant languages, as
-[references/scoring.md](references/scoring.md) defines them, with the linter and
-formatter CI runs for each, and whether each is established or custom. Note the
-security scanners for each kind scoring.md lists, in CI and in documented hooks, and
-whether a hook scans for secrets before commit or push. Find the common file types,
-as "Generators" in [references/checks.md](references/checks.md) says, with each one's
-generator and documented example. Read the docs and agent instructions; step 4
-builds the conventions list from them. Note whether the working tree has uncommitted
-changes, because only the commit gets scored.
+setup, any git hooks the documented setup installs, and agent hooks in committed
+agent settings, such as `.claude/settings.json`, each with its event and what it
+runs. Note the coverage tool and its config: whether branch coverage is on, the
+threshold, whether CI fails on it, and whether it applies overall or to changed code.
+Note the duplication tool the same way, with the paths its config ignores. Note the
+type checker, whether it's strict and whether CI fails on it. List the significant
+languages, as [references/scoring.md](references/scoring.md) defines them, with the
+linter and formatter CI runs for each, and whether each is established or custom.
+Note the security scanners for each kind scoring.md lists, in CI and in documented
+hooks, and whether a hook scans for secrets before commit or push. Find the common
+file types, as "Generators" in [references/checks.md](references/checks.md) says, with
+each one's generator and documented example. Read the docs and agent instructions;
+step 4 builds the conventions list from them. Note whether the working tree has
+uncommitted changes, because only the commit gets scored.
 
 Look for services the tests may touch: Docker Compose files, database and queue
 config, required environment variables, and HTTP calls without a stub library. This
@@ -185,7 +186,8 @@ Other:        npx jscpd for duplication; diff-cover for the changed-code coverag
               gate; read-only gh calls for CI history, review comments, merge
               rules and security settings; documented pre-commit hook with
               gitleaks, for violations the commands miss; bin/rails generate
-              for the repo's service generator, then lint and tests on the output
+              for the repo's service generator, then lint and tests on the output;
+              the PostToolUse hook (rubocop) and lefthook pre-commit, timed
 Access:       save folder ok, temp ok, network ok, gh ok
 Budget:       unknown until the first test run. Stops at 60 minutes.
 Saved to:     ~/.agent-friendliness-score/payments-api-1a2b3c4d/ (full results)
@@ -241,7 +243,7 @@ Run these in order, as [references/checks.md](references/checks.md) describes:
 
 1. Have a fresh agent write the seeded bugs.
 2. Run the baseline.
-3. Time one test file and the relevant tests.
+3. Time one test file, the relevant tests and the feedback hooks.
 4. Run the seeded bugs.
 5. Build the conventions list, with review history from `gh` if available.
 6. Run the planted violations.
@@ -279,8 +281,8 @@ it. A gap in this run's measurement isn't a fix either, so "install jscpd" or "m
 to GitHub Actions" can't rank. List those gaps as ceilings in the evidence. A fix
 must also pass the evidence filter in
 [references/scoring.md](references/scoring.md), and, when a coverage, type-check,
-lint-rule, security, duplication or generator fix ranks, use the form scoring.md
-gives. Don't apply any fix. This skill only reports.
+lint-rule, security, duplication, generator or hook fix ranks, use the form
+scoring.md gives. Don't apply any fix. This skill only reports.
 
 ## 8. Report, save and clean up
 
@@ -359,8 +361,9 @@ from step 4. They are what reruns compare against:
   merge state (required, not required or left out), push protection (on, off or left
   out), the test isolation result, setup findings, replaced questions, who wrote the
   bugs, the result for each patch, the common file types with their generators and
-  example files, the generator smoke-test results, and the exact commands and
-  searches used, so the next run can compare and repeat them.
+  example files, the generator smoke-test results, the feedback hooks with their
+  commands and times, and the exact commands and searches used, so the next run can
+  compare and repeat them.
 
 Then run `sandbox finish --complete --report-to <folder>`, or leave out `--report-to`
 if the user chose the home folder only. This compares the scored repo first and

@@ -33,6 +33,8 @@ it. An "unknown" estimate is fine, because the budget is the limit.
   the tests covering the touched file, an overall gate the full run. Then run the
   full commands on any violation those miss. Plant the required types first. A
   violation that never ran leaves the sample.
+- **Feedback hooks** run with item 3 of step 4, before the last quarter. Stop a hook
+  still running at 5 minutes, which fails its time limit.
 - **Short of time in the last quarter,** drop work in this order: first, the full
   commands on violations their likely checks missed; then, violations beyond the
   first 5 that ran; then, a coverage type whose gate needs a full run that won't
@@ -170,6 +172,46 @@ gh run list --workflow <main workflow> --branch <default branch> --limit 50 \
 CI time is the median duration of successful runs. Treat the share of runs with
 `attempt` above 1 as the flaky rate. Without `gh`, or on another CI system, both
 are optional and left out, as [scoring.md](scoring.md) explains.
+
+## Feedback hooks (Feedback speed)
+
+Time the edit-time feedback hook and the scoped checks hook, as
+[scoring.md](scoring.md) defines them, on the production file used for relevant
+tests. A hook command is the repo's code, so run it only with `sandbox run` in the
+clone, and list it in the plan. Don't run a hook that deploys, publishes or reaches
+services beyond the plan; it's not measured. A hook that can't run because this
+machine lacks a tool the docs name is not measured too, as in "When the baseline
+fails". With no such hook, the requirement isn't met. The time is `sandbox run`'s
+`elapsed_seconds`. Save the commands, patches and times, and reuse them on a rerun.
+
+**Edit-time feedback hook.** Reuse `hooks/edit.patch`, or a lint or formatting patch
+in `violations/`, that fits the hook's tool. Otherwise plant a lint violation it
+flags, or a formatting break if it only formats, and run
+`sandbox capture hooks/edit.patch`. Apply it, then send the hook the payload its agent
+tool sends, naming that file, with the project dir set to the clone. For Claude Code:
+
+```bash
+printf '%s' '{"hook_event_name":"PostToolUse","tool_name":"Edit","cwd":"<sandbox>","tool_input":{"file_path":"<sandbox>/<file>"}}' \
+  | sandbox run -- env CLAUDE_PROJECT_DIR=<sandbox> bash -c '<hook command>'
+```
+
+Only `printf` runs outside the clone. It meets the requirement if it reports the
+problem, or the fix it made, as [scoring.md](scoring.md) says, the planted change is
+still there apart from formatting the hook fixed, and it took under 5 seconds. Then
+run `sandbox restore`.
+
+**Scoped checks hook.** Make a one-line change that keeps behaviour, such as renaming
+a local variable, and run `sandbox capture hooks/change.patch`. Apply it. For a
+pre-commit hook, stage it with `sandbox run -- git add -A`, then run the hook without
+committing, such as `lefthook run pre-commit`, `pre-commit run` or the hook file the
+documented setup installed in the clone, through `sandbox run`. For an agent
+end-of-turn hook, send its payload as above, such as
+`{"hook_event_name":"Stop","stop_hook_active":false,"cwd":"<sandbox>"}` for Claude
+Code. It meets the requirement if it lints the changed file, runs tests selected by
+the change, and takes under 60 seconds and at most half the full run in "Timings". A
+full run that was stopped took at least as long as it ran. Failing on the change is
+fine. If the repo has both kinds, time each, and either one passing meets it. Then
+run `sandbox restore`, which discards the staged change with hooks off.
 
 ## Reproducible setup (Feedback speed)
 

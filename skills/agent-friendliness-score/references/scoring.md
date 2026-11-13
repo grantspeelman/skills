@@ -106,13 +106,40 @@ the tests relevant to a typical change. "Reproducible setup" means dependencies 
 locked, tool versions are pinned, not just documented (a dev container or Nix setup
 also counts), and one documented command sets up the project, each where it applies.
 
+An **edit-time feedback hook** is a committed agent hook that runs after each edit,
+lints or formats the edited file, and reports the result to the agent, such as a
+Claude Code `PostToolUse` hook matching `Edit|Write|MultiEdit` in
+`.claude/settings.json`. It reports through exit 2 with stderr, `"decision":
+"block"` or `hookSpecificOutput.additionalContext`, which all leave the edit in place.
+A hook in `settings.local.json`, or one that stops the edit, such as a `PreToolUse`
+deny, doesn't count. It's N/A only when no agent tool the repo's instructions target
+has an after-edit hook. A repo with no agent instructions still needs it.
+
+A **scoped checks hook** lints the changed files and runs only the tests related to
+the change, such as `vitest related`, `jest --findRelatedTests`, `go test` on the
+changed packages or pytest-testmon. It's either a pre-commit hook the documented setup
+installs, such as lefthook, pre-commit or husky with lint-staged, or an agent
+end-of-turn hook in committed settings, such as a Claude Code `Stop` hook.
+
+Each hook counts only when its timed run in [checks.md](checks.md) passes. Record
+every agent and git hook, with its event and what it runs, as static evidence.
+
 | Grade | Static | Measured |
 |-------|--------|----------|
 | F | No test command can be found. | No test command can be found or run. |
 | D | A test command exists but is undocumented. | Following the docs fails, or relevant tests take 30 minutes or more. |
 | C | One documented command proves a change works, and running a single test file is documented. | The documented command works, and relevant tests take under 30 minutes. |
-| B | | The documented command works on a clean checkout, relevant tests take under 5 minutes, one test file runs in under 60 seconds, and the repo has a reproducible setup. |
-| A | | Relevant tests take under 60 seconds, one test file runs in under 15 seconds, no local flakes, flaky rate at most 2% and CI under 15 minutes (both optional), an agent can read logs and errors from the repo's documented tools, and the repo has a reproducible setup. |
+| B | | The documented command works on a clean checkout, relevant tests take under 5 minutes, one test file runs in under 60 seconds, and the repo has a reproducible setup and a scoped checks hook. |
+| A | | Relevant tests take under 60 seconds, one test file runs in under 15 seconds, no local flakes, flaky rate at most 2% and CI under 15 minutes (both optional), an agent can read logs and errors from the repo's documented tools, and the repo has a reproducible setup, a scoped checks hook and an edit-time feedback hook where it applies. |
+
+**Hook fix.** When there's no scoped checks hook, or it failed its timed run, name the
+hook and tools for this stack, such as "switch the pre-commit hook to lint-staged with
+`vitest related`" or "add a `Stop` hook in `.claude/settings.json` running `go test`
+on the changed packages". It can move Feedback speed, such as "Feedback speed C to B".
+When there's no edit-time feedback hook, or it failed, suggest "add a `PostToolUse`
+hook in `.claude/settings.json` running <the stack's linter or formatter> on the
+edited file", naming the tool, such as RuboCop, Ruff or ESLint, for "Feedback speed B
+to A".
 
 ## Context
 
@@ -131,14 +158,15 @@ of repo questions answered correctly. "Rules match" is defined in
 Only committed MCP config counts. What's on a developer's machine isn't evidence
 about the repo.
 
-Record these as static evidence. They don't change the grade: committed agent
-settings, hooks, skills and editor rules, such as `.claude/settings.json`,
+Record these as static evidence. They don't change the Context grade: committed
+agent settings, hooks, skills and editor rules, such as `.claude/settings.json`,
 `.cursor/rules/` or `.github/copilot-instructions.md`, instruction files in
 subdirectories, and whether a second agent tool would pick up the same instructions.
 A `CLAUDE.md` with no `AGENTS.md` leaves Codex without them. When scoring a package,
-check for instruction files that apply to that package's path. Also record whether
-the instructions or docs describe a testing approach, such as TDD, writing testable
-code, where tests go and what kind of tests to write.
+check for instruction files that apply to that package's path. Feedback speed grades
+the hooks it defines. Also record whether the instructions or docs describe a testing
+approach, such as TDD, writing testable code, where tests go and what kind of tests
+to write.
 
 ## Consistency
 
