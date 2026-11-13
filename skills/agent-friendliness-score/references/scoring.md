@@ -1,6 +1,6 @@
 # Scoring
 
-Rules version: 1
+Rules version: 2
 
 Bump it when a change to scoring.md or checks.md can move a grade. `result.json`
 saves it as `rules_version`, so a rerun can tell a rule change from a regression.

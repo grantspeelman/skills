@@ -1,11 +1,11 @@
 ---
 name: agent-friendliness-score
 description: >-
-  Grade a repo A to F in five categories on how safely AI coding agents can
-  work in it, and end with the top three fixes. Measures whether the repo
-  catches a plausible but wrong change by planting bugs in a throwaway clone,
-  timing the tests and testing the docs with a fresh agent. Costs real time and
-  agent usage. Work in progress.
+  Grade a repo A to F in five categories on whether it's agent friendly and
+  follows practices that help code get built with agents, and end with the top
+  three fixes. Plants bugs in a throwaway clone to see if a plausible but wrong
+  change gets caught, times the tests and tests the docs with a fresh agent.
+  Costs real time and agent usage. Work in progress.
 disable-model-invocation: true
 ---
 
@@ -13,10 +13,11 @@ disable-model-invocation: true
 
 > This skill is a work in progress.
 
-Score one repo on one question: **if an agent makes a plausible but wrong
-change, will the repo catch it?** Five categories, each graded A, B, C, D or F:
-Verification, Feedback speed, Context, Consistency and Guardrails. There's no
-overall score.
+Score one repo on one question: **is the repo agent friendly, and does it follow
+practices that help code get built with agents?** Part of that is whether the repo
+catches a plausible but wrong change, which Verification and Guardrails mainly
+measure. Five categories, each graded A, B, C, D or F: Verification, Feedback
+speed, Context, Consistency and Guardrails. There's no overall score.
 
 Every run is the full assessment. There are no lighter or deeper modes. Don't
 run mutation testing or replay old pull requests. A mutation score the repo
