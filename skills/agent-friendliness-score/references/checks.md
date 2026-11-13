@@ -16,7 +16,7 @@ it. An "unknown" estimate is fine, because the budget is the limit.
 
 - Run the baseline with CI's coverage settings, so later steps can reuse its
   coverage report.
-- Keep the last quarter of the budget for items 5 to 9 of step 4. Stop running
+- Keep the last quarter of the budget for items 5 to 10 of step 4. Stop running
   seeded bugs when you reach it.
 - **Suite over 5 minutes:** run each bug against its relevant tests first. Run the
   full commands only on bugs those tests miss, while budget remains.
@@ -36,8 +36,9 @@ it. An "unknown" estimate is fine, because the budget is the limit.
 - **Short of time in the last quarter,** drop work in this order: first, the full
   commands on violations their likely checks missed; then, violations beyond the
   first 5 that ran; then, a coverage type whose gate needs a full run that won't
-  fit, which leaves the sample. Drop fresh agents and required types last. Fresh
-  agents need the clean clone, so don't run them while a patch is applied.
+  fit, which leaves the sample; then, generator smoke tests beyond the first. Drop
+  fresh agents and required types last. Fresh agents need the clean clone, so don't
+  run them while a patch is applied or generator output is in the clone.
 
 ## Seeded bugs (Verification)
 
@@ -423,19 +424,27 @@ but git history can still show them. If an agent says it read one, disclose it t
 same way as a test that was read.
 
 **Repo questions.** Write 6 questions an agent starting a task here would need
-answered, with an answer key you checked against the code. For example: which
-command proves a change to a given area works, where a given rule is enforced,
-which module owns a given concern, what a new endpoint must do.
+answered, with an answer key you checked against the code. Ask one each on: what an
+agent must not do without asking, which environment variables and services are
+needed to run the project, what kind of test a change to a named area needs and where
+it goes, why a notable design choice was made, whether there's an existing helper for
+a common concern, and how to add a new file of a common type. Where one of these
+doesn't apply, ask another question instead, such as which command proves a change to
+a given area works, where a given rule is enforced, which module owns a given concern
+or what a new endpoint must do.
 
-Where it applies, the six must include one each on: what an agent must not do without
-asking, which environment variables and services are needed to run the project, what
-kind of test a change to a named area needs and where it goes, why a notable design
-choice was made, and whether there's an existing helper for a common concern. For the
-design choice, choose the one with the most effect on a typical change, before
-checking whether the docs explain it. For the helper, choose a concern with a helper
-that has several call sites, such as date formatting, API errors or retries. The
-question names the concern, not the helper, and the key names the helper's module and
-function. This shows whether an agent can find code to reuse.
+For the design choice, choose the one with the most effect on a typical change,
+before checking whether the docs explain it. For the helper, choose a concern with a
+helper that has several call sites, such as date formatting, API errors or retries.
+The question names the concern, not the helper, and the key names the helper's module
+and function. This shows whether an agent can find code to reuse.
+
+For the new file, ask "How should I add a new X?", with X the common file type, as
+[scoring.md](scoring.md) defines it, with the most files among the hotspots, then the
+most files overall. The key names the generator command or the reference example
+file. If the repo has neither, keep the question and say so in the key, as below.
+Picking any file of that type to copy isn't correct then, because nothing tells an
+agent which one is a good model.
 
 If nothing in the repo answers a question, code included, keep it and say so in the
 key. An agent saying "the repo doesn't say" is honest but isn't correct, because this
@@ -443,7 +452,7 @@ measures what the repo tells an agent. A correct answer read from the code count
 such as a list of environment variables.
 
 Save both in `context/questions.md`. On a rerun, reuse them, updating the key if the
-code changed. If an older set lacks any of those five, replace the questions closest
+code changed. If an older set lacks any of those six, replace the questions closest
 in topic to the missing ones, never choosing by which questions failed. The report
 names the questions removed and the ones added. Give the agent only this:
 
@@ -491,6 +500,25 @@ deliberate choice, so label it low confidence.
   the docs name a preferred one. Save the search commands, and reuse them on a rerun.
 - **Hotspots:** the hotspot list above, plus the 10 largest non-generated files.
   Note files on both lists. With shallow history, this is "not measured".
+
+## Generators (Consistency)
+
+**Common file types.** In step 1 of [SKILL.md](../SKILL.md), group production
+files by role with `git ls-files`, using their folder and name pattern, such as
+`app/controllers/*_controller.rb` or `src/**/*.component.ts`. Each role with at least
+5 files that follow one pattern is a common file type. Save the patterns and counts,
+and reuse the patterns on a rerun. For each, note its generator and any doc that names
+a reference example file, as [scoring.md](scoring.md) defines them.
+
+**Smoke test.** For each common file type with a generator, most files first, run
+the generator in the clone with `sandbox run`, with a new name such as `AfsSmoke` and
+default answers to any prompts. Then run the commands on its output: lint, typecheck,
+and the tests relevant to the new files, including any the generator wrote. Then run
+`sandbox restore`. Output that fails a check the baseline passed means a **stale
+generator**. Report it as a finding. The plan lists each generator command. If a
+generator, or the tests on its output, would reach services or the network beyond
+what the plan allows, don't run it, and mark that smoke test not measured. Save the
+commands and results for reruns, and label them measured.
 
 ## Merge rules (Guardrails, optional)
 

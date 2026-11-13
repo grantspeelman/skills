@@ -161,13 +161,30 @@ as `jscpd:ignore-start` blocks, `# pylint: disable=duplicate-code` or `//nolint:
 and separately the production lines in paths the duplication config ignores. A
 required review on the config also checks new ignored paths.
 
+A **common file type** is a role with at least 5 production files that follow one
+pattern, such as controllers, forms, migrations, jobs or components.
+[checks.md](checks.md) says how to find them. Requirements on them are N/A where the
+repo has none. A **generator** is one the repo customises, such as Rails
+`lib/generators`, Angular schematics or Nx generators, or provides, such as plop,
+hygen, cookiecutter or Yeoman. A framework's stock generator the repo doesn't
+customise doesn't count. A common file type **has a working generator or a documented
+example** when its generator passed the smoke test in [checks.md](checks.md), or docs,
+such as agent instructions or contributing docs, name a reference example file for
+it. A stale generator fails this for its type, even with an example, because an agent
+may still run it. A generator whose smoke test didn't run, with no documented example,
+leaves this not measured.
+
+Record as static evidence each common file type with its generator and any doc that
+names a reference example file for it. In a static-only grade these are evidence and
+don't change the grade.
+
 | Grade | Static | Measured |
 |-------|--------|----------|
 | F | | Duplication over 15%, and at least two concerns have three or more approaches. |
 | D | No stated conventions. | Duplication 10% or more, or more than two competing concerns. |
 | C | Conventions documented for most concerns, or a configured size or complexity limit. | Duplication under 10% or not measured, and at most two competing concerns. |
-| B | | Duplication under 5%, at most one competing concern, at most 3 non-generated files over about 1,000 lines, and a duplication gate where it applies. |
-| A | | Duplication under 3%, no competing concerns, no file over about 1,000 lines on both hotspot lists, CI enforces a size or complexity limit, and a duplication gate with its suppressions checked, where it applies. |
+| B | | Duplication under 5%, at most one competing concern, at most 3 non-generated files over about 1,000 lines, a duplication gate where it applies, and common file types have a working generator or a documented example, where it applies. |
+| A | | Duplication under 3%, no competing concerns, no file over about 1,000 lines on both hotspot lists, CI enforces a size or complexity limit, a duplication gate with its suppressions checked, where it applies, and common file types have a working generator or a documented example, where it applies. |
 
 If the duplication count can't run, this category stops at C. Show it as a ceiling,
 `C (ceiling: duplication not measured)`.
@@ -179,6 +196,13 @@ files" or "turn on golangci-lint `dupl` with `new-from-merge-base`". It can move
 copied-code catch, the Guardrails catch rate and the Consistency grade, such as
 "Consistency C to B". When duplication suppressions aren't checked, name the check,
 such as `CODEOWNERS` on `.jscpd.json` with reviews required, for "Consistency B to A".
+
+**Generator fix.** When a common file type has no working generator or documented
+example, suggest naming one reference example file for each common file type in
+`AGENTS.md` or `CLAUDE.md`, or adding a generator, naming the tool for this stack,
+such as a Rails generator in `lib/generators` or a plop template. When a generator is
+stale, name it and the check its output failed, and suggest fixing its templates. It
+can move the Consistency grade, such as "Consistency C to B".
 
 ## Guardrails
 
