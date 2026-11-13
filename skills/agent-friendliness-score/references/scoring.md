@@ -108,11 +108,12 @@ also counts), and one documented command sets up the project, each where it appl
 
 An **edit-time feedback hook** is a committed agent hook that runs after each edit,
 lints or formats the edited file, and reports the result to the agent. For Claude Code
-it's a `PostToolUse` hook matching `Edit|Write|MultiEdit` in `.claude/settings.json`,
-reporting through exit 2 with stderr, `"decision": "block"` with a `reason`, or
-`hookSpecificOutput.additionalContext`, which all leave the edit in place. Another
-agent tool's after-edit hook counts too, if its output reaches that tool's agent. A
-hook in `settings.local.json`, or one that stops the edit, such as a `PreToolUse`
+it's a `PostToolUse` hook in `.claude/settings.json` whose matcher covers the
+file-edit tools, such as `Edit|Write`, reporting through exit 2 with stderr,
+`"decision": "block"` with a `reason`, or `hookSpecificOutput.additionalContext`,
+which all leave the edit in place. Another agent tool's after-edit hook counts too, if
+its output reaches that tool's agent, as that tool's documentation states. If it
+doesn't say, it doesn't count. A hook in `settings.local.json`, or one that stops the edit, such as a `PreToolUse`
 deny, doesn't count. It applies to every repo, because Claude Code can work on any
 repo.
 

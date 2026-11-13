@@ -177,21 +177,24 @@ are optional and left out, as [scoring.md](scoring.md) explains.
 
 Time the edit-time feedback hook and the scoped checks hook, as
 [scoring.md](scoring.md) defines them, on the production file used for relevant
-tests. A hook command is the repo's code, so run it only with `sandbox run` in the
-clone, and list it in the plan. Don't run a hook that deploys, publishes or reaches
-services beyond the plan; it's not measured. A hook that can't run because this
-machine lacks a tool the docs name is not measured too, as in "When the baseline
-fails". With no such hook, the requirement isn't met.
+tests, or the top hotspot if there are no tests. A hook command is the repo's code,
+so run it only with `sandbox run` in the clone, and list it in the plan. Don't run a
+hook that deploys, publishes or reaches services beyond the plan; it's not measured.
+A hook that can't run because this machine lacks a tool the docs name is not measured
+too, as in "When the baseline fails". With no such hook, the requirement isn't met.
 
 Write the hook's command to a script in `save_dir`, such as `hooks/post-edit.sh`,
-copied exactly from the settings or hook config. When several hooks match the same
-event, put them all in the script, one after another, and judge their output
-together, as the agent tool would. Time it inside the script: take `date +%s.%N`
-before and after the hook commands, or `perl -MTime::HiRes=time -e 'print time'`
-where `date` lacks `%N`, and print the difference to stderr. Run each hook
-twice, running `sandbox restore` and redoing the change between runs, and judge and
-time the second run, so a cold cache doesn't count. Save the scripts, payloads,
-patches and times, and reuse them on a rerun.
+copied exactly from the settings or hook config. The script reads the payload once,
+with `payload=$(cat)`, and pipes it to each hook that matches the event, run in
+parallel with `&` and then `wait`, as Claude Code does. It saves each hook's exit
+code, stdout and stderr separately, and each hook is judged on its own reporting
+channels. It times the whole: `date +%s.%N` before starting the hooks and after
+`wait`, or `perl -MTime::HiRes=time -e 'print time'` where `date` lacks `%N`, with
+the difference printed to stderr. Run it twice, running `sandbox restore` and redoing
+the change between runs, and judge and time the second run, so a cold cache doesn't
+count. If a hook's cache file isn't ignored by git, restore deletes it, so note that
+both runs were cold. Save the scripts, payloads, patches and times, and reuse them on
+a rerun.
 
 **Edit-time feedback hook.** Reuse `hooks/edit.patch`, or a lint or formatting patch
 in `violations/`, that fits the hook's tool. Otherwise plant a lint violation it
