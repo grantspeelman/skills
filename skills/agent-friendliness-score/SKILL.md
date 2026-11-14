@@ -1,11 +1,11 @@
 ---
 name: agent-friendliness-score
 description: >-
-  Grade a repo A to F in five categories on how safely AI coding agents can
-  work in it, and end with the top three fixes. Measures whether the repo
-  catches a plausible but wrong change by planting bugs in a throwaway clone,
-  timing the tests and testing the docs with a fresh agent. Costs real time and
-  agent usage. Work in progress.
+  Grade a repo A to F in five categories on whether it's agent friendly and
+  follows practices that help code get built with agents, and end with the top
+  three fixes. Plants bugs in a throwaway clone to see if a plausible but wrong
+  change gets caught, times the tests and tests the docs with a fresh agent.
+  Costs real time and agent usage. Work in progress.
 disable-model-invocation: true
 ---
 
@@ -13,10 +13,11 @@ disable-model-invocation: true
 
 > This skill is a work in progress.
 
-Score one repo on one question: **if an agent makes a plausible but wrong
-change, will the repo catch it?** Five categories, each graded A, B, C, D or F:
-Verification, Feedback speed, Context, Consistency and Guardrails. There's no
-overall score.
+Score one repo on this question: **is the repo agent friendly, and does it follow
+practices that help code get built with agents?** Part of that is whether the repo
+catches a plausible but wrong change, which Verification and Guardrails mainly
+measure. Five categories, each graded A, B, C, D or F: Verification, Feedback
+speed, Context, Consistency and Guardrails. There's no overall score.
 
 Every run is the full assessment. There are no lighter or deeper modes. Don't
 run mutation testing or replay old pull requests. A mutation score the repo
@@ -131,17 +132,20 @@ state file records it. Then remove the state file it names. If no `leftover_clon
 is listed, remove the state file only and leave any folder alone.
 
 Find the stack, CI's test, lint and typecheck commands, how the repo documents its
-setup, and any hooks the documented setup installs. Note the coverage tool and its
-config: whether branch coverage is on, the threshold, whether CI fails on it, and
-whether it applies overall or to changed code. Note the duplication tool the same
-way, with the paths its config ignores. Note the type checker, whether it's strict
-and whether CI fails on it. List the significant languages, as
-[references/scoring.md](references/scoring.md) defines them, with the linter and
-formatter CI runs for each, and whether each is established or custom. Note the
-security scanners for each kind scoring.md lists, in CI and in documented hooks, and
-whether a hook scans for secrets before commit or push. Read the docs and agent
-instructions; step 4 builds the conventions list from them. Note whether the working
-tree has uncommitted changes, because only the commit gets scored.
+setup, any git hooks the documented setup installs, and agent hooks in committed
+agent settings, such as `.claude/settings.json`, each with its event and what it
+runs. Note the coverage tool and its config: whether branch coverage is on, the
+threshold, whether CI fails on it, and whether it applies overall or to changed code.
+Note the duplication tool the same way, with the paths its config ignores. Note the
+type checker, whether it's strict and whether CI fails on it. List the significant
+languages, as [references/scoring.md](references/scoring.md) defines them, with the
+linter and formatter CI runs for each, and whether each is established or custom.
+Note the security scanners for each kind scoring.md lists, in CI and in documented
+hooks, and whether a hook scans for secrets before commit or push. Find the common
+file types, as "Generators" in [references/checks.md](references/checks.md) says, with
+each one's generator and documented example. Read the docs and agent instructions;
+step 4 builds the conventions list from them. Note whether the working tree has
+uncommitted changes, because only the commit gets scored.
 
 Look for services the tests may touch: Docker Compose files, database and queue
 config, required environment variables, and HTTP calls without a stub library. This
@@ -181,7 +185,9 @@ Agents:       3 fresh agents, one for the bugs and two for the docs check
 Other:        npx jscpd for duplication; diff-cover for the changed-code coverage
               gate; read-only gh calls for CI history, review comments, merge
               rules and security settings; documented pre-commit hook with
-              gitleaks, for violations the commands miss
+              gitleaks, for violations the commands miss; bin/rails generate
+              for the repo's service generator, then lint and tests on the output;
+              the PostToolUse hook (rubocop) and lefthook pre-commit, timed
 Access:       save folder ok, temp ok, network ok, gh ok
 Budget:       unknown until the first test run. Stops at 60 minutes.
 Saved to:     ~/.agent-friendliness-score/payments-api-1a2b3c4d/ (full results)
@@ -237,16 +243,17 @@ Run these in order, as [references/checks.md](references/checks.md) describes:
 
 1. Have a fresh agent write the seeded bugs.
 2. Run the baseline.
-3. Time one test file and the relevant tests.
+3. Time one test file, the relevant tests and the feedback hooks.
 4. Run the seeded bugs.
 5. Build the conventions list, with review history from `gh` if available.
 6. Run the planted violations.
 7. Run the two fresh-agent checks.
 8. Run the consistency counts.
-9. Read CI history, merge rules and security settings with `gh`, if available.
+9. Run the generator smoke tests.
+10. Read CI history, merge rules and security settings with `gh`, if available.
 
 Run `sandbox restore` between changes to the clone. Don't use bare git commands
-to restore. If there are no tests, skip steps 1 to 4 and carry on with the rest.
+to restore. If there are no tests, skip items 1 to 4 and carry on with the rest.
 That's a measured result, an F for Verification.
 
 ## 5. Read the rest of the static evidence
@@ -274,8 +281,8 @@ it. A gap in this run's measurement isn't a fix either, so "install jscpd" or "m
 to GitHub Actions" can't rank. List those gaps as ceilings in the evidence. A fix
 must also pass the evidence filter in
 [references/scoring.md](references/scoring.md), and, when a coverage, type-check,
-lint-rule, security or duplication fix ranks, use the form scoring.md gives. Don't
-apply any fix. This skill only reports.
+lint-rule, security, duplication, generator or hook fix ranks, use the form
+scoring.md gives. Don't apply any fix. This skill only reports.
 
 ## 8. Report, save and clean up
 
@@ -353,8 +360,11 @@ from step 4. They are what reruns compare against:
   and as points (A 20 to F 0), whether each category is measured, raw metrics, the
   merge state (required, not required or left out), push protection (on, off or left
   out), the test isolation result, setup findings, replaced questions, who wrote the
-  bugs, the result for each patch, and the exact commands and searches used, so the
-  next run can compare and repeat them.
+  bugs, the result for each patch, the common file types with their patterns, counts,
+  ranking, generators and example files, the generator smoke-test results, each
+  feedback hook's event, command, result (met, failed or not measured), how it
+  reported and time, and the exact commands and searches used, so the next run can
+  compare and repeat them.
 
 Then run `sandbox finish --complete --report-to <folder>`, or leave out `--report-to`
 if the user chose the home folder only. This compares the scored repo first and

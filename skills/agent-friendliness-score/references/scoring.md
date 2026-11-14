@@ -1,6 +1,6 @@
 # Scoring
 
-Rules version: 1
+Rules version: 2
 
 Bump it when a change to scoring.md or checks.md can move a grade. `result.json`
 saves it as `rules_version`, so a rerun can tell a rule change from a regression.
@@ -106,13 +106,43 @@ the tests relevant to a typical change. "Reproducible setup" means dependencies 
 locked, tool versions are pinned, not just documented (a dev container or Nix setup
 also counts), and one documented command sets up the project, each where it applies.
 
+An **edit-time feedback hook** is a committed agent hook that runs after each edit,
+lints or formats the edited file, and reports the result to the agent. For Claude Code
+it's a `PostToolUse` hook in `.claude/settings.json` whose matcher covers the
+file-edit tools, such as `Edit|Write`, reporting through exit 2 with stderr,
+`"decision": "block"` with a `reason`, or `hookSpecificOutput.additionalContext`,
+which all leave the edit in place. Another agent tool's after-edit hook counts too, if
+its output reaches that tool's agent. If you can't confirm that from that tool's
+documentation, record it as static evidence and it doesn't count. A hook in
+`settings.local.json`, or one that stops the edit, such as a `PreToolUse` deny,
+doesn't count. It applies to every repo, because Claude Code can work on any
+repo.
+
+A **scoped checks hook** lints the changed files and runs only the tests related to
+the change, such as `vitest related`, `jest --findRelatedTests`, `go test` on the
+changed packages or pytest-testmon. It's either a pre-commit hook the documented setup
+installs, such as lefthook, pre-commit or husky with lint-staged, or an agent
+end-of-turn hook in committed settings, such as a Claude Code `Stop` hook.
+
+Each hook counts only when its timed run in [checks.md](checks.md) passes. Record
+every agent and git hook, with its event and what it runs, as static evidence.
+
 | Grade | Static | Measured |
 |-------|--------|----------|
 | F | No test command can be found. | No test command can be found or run. |
 | D | A test command exists but is undocumented. | Following the docs fails, or relevant tests take 30 minutes or more. |
 | C | One documented command proves a change works, and running a single test file is documented. | The documented command works, and relevant tests take under 30 minutes. |
-| B | | The documented command works on a clean checkout, relevant tests take under 5 minutes, one test file runs in under 60 seconds, and the repo has a reproducible setup. |
-| A | | Relevant tests take under 60 seconds, one test file runs in under 15 seconds, no local flakes, flaky rate at most 2% and CI under 15 minutes (both optional), an agent can read logs and errors from the repo's documented tools, and the repo has a reproducible setup. |
+| B | | The documented command works on a clean checkout, relevant tests take under 5 minutes, one test file runs in under 60 seconds, and the repo has a reproducible setup and a scoped checks hook. |
+| A | | Relevant tests take under 60 seconds, one test file runs in under 15 seconds, no local flakes, flaky rate at most 2% and CI under 15 minutes (both optional), an agent can read logs and errors from the repo's documented tools, and the repo has a reproducible setup, a scoped checks hook and an edit-time feedback hook. |
+
+**Hook fix.** When there's no scoped checks hook, or it failed its timed run, name the
+hook and tools for this stack, such as "switch the pre-commit hook to lint-staged with
+`vitest related`" or "add a `Stop` hook in `.claude/settings.json` running `go test`
+on the changed packages". It can move Feedback speed, such as "Feedback speed C to B".
+When there's no edit-time feedback hook, or it failed, suggest "add a `PostToolUse`
+hook in `.claude/settings.json`, or the equivalent hook for the agent tool the repo's
+instructions target, running <the stack's linter or formatter> on the edited file",
+naming the tool, such as RuboCop, Ruff or ESLint, for "Feedback speed B to A".
 
 ## Context
 
@@ -131,14 +161,15 @@ of repo questions answered correctly. "Rules match" is defined in
 Only committed MCP config counts. What's on a developer's machine isn't evidence
 about the repo.
 
-Record these as static evidence. They don't change the grade: committed agent
-settings, hooks, skills and editor rules, such as `.claude/settings.json`,
+Record these as static evidence. They don't change the Context grade: committed
+agent settings, hooks, skills and editor rules, such as `.claude/settings.json`,
 `.cursor/rules/` or `.github/copilot-instructions.md`, instruction files in
 subdirectories, and whether a second agent tool would pick up the same instructions.
 A `CLAUDE.md` with no `AGENTS.md` leaves Codex without them. When scoring a package,
-check for instruction files that apply to that package's path. Also record whether
-the instructions or docs describe a testing approach, such as TDD, writing testable
-code, where tests go and what kind of tests to write.
+check for instruction files that apply to that package's path. Feedback speed grades
+the hooks defined there. Also record whether the instructions or docs describe a
+testing approach, such as TDD, writing testable code, where tests go and what kind of
+tests to write.
 
 ## Consistency
 
@@ -161,13 +192,37 @@ as `jscpd:ignore-start` blocks, `# pylint: disable=duplicate-code` or `//nolint:
 and separately the production lines in paths the duplication config ignores. A
 required review on the config also checks new ignored paths.
 
+A **common file type** is a role with at least 5 production files in one folder with
+one name suffix, such as controllers, forms, migrations, jobs or components. Only the
+3 that [checks.md](checks.md) ranks first are scored. Requirements on them are N/A
+where the repo has none. A **generator** is one the repo provides, such as plop,
+hygen, cookiecutter or Yeoman, or writes, such as Rails `lib/generators`, Angular
+schematics or Nx generators. A framework's stock generator counts only when the repo's
+docs name it for that file type, or the repo customises it for that file type, such as
+template overrides in `lib/templates/`, Rails `config.generators` options for it, or
+a schematics collection or defaults in `angular.json`. A setting that only turns
+something off, such as `config.generators.system_tests = nil`, doesn't count. A
+**documented example** is a file that docs, such as agent instructions or contributing
+docs, name as the reference for that file type, and that exists at the scored commit
+and matches the type's pattern.
+
+A common file type **has a working generator or a documented example** when its
+generator passed the smoke test in [checks.md](checks.md), or it has a documented
+example. A stale generator fails this for its type, even with an example, because an
+agent may still run it. A generator that can't run without prompts doesn't count as
+working. When the generator's smoke test didn't run, such as for budget or network, a
+documented example still meets it, and without one it's not measured.
+
+Record as static evidence each common file type with its generator and documented
+example. In a static-only grade these are evidence and don't change the grade.
+
 | Grade | Static | Measured |
 |-------|--------|----------|
 | F | | Duplication over 15%, and at least two concerns have three or more approaches. |
 | D | No stated conventions. | Duplication 10% or more, or more than two competing concerns. |
 | C | Conventions documented for most concerns, or a configured size or complexity limit. | Duplication under 10% or not measured, and at most two competing concerns. |
-| B | | Duplication under 5%, at most one competing concern, at most 3 non-generated files over about 1,000 lines, and a duplication gate where it applies. |
-| A | | Duplication under 3%, no competing concerns, no file over about 1,000 lines on both hotspot lists, CI enforces a size or complexity limit, and a duplication gate with its suppressions checked, where it applies. |
+| B | | Duplication under 5%, at most one competing concern, at most 3 non-generated files over about 1,000 lines, a duplication gate where it applies, and every scored common file type has a working generator or a documented example, where it applies. |
+| A | | Duplication under 3%, no competing concerns, no file over about 1,000 lines on both hotspot lists, CI enforces a size or complexity limit, a duplication gate with its suppressions checked, and every scored common file type with a working generator or a documented example, each where it applies. |
 
 If the duplication count can't run, this category stops at C. Show it as a ceiling,
 `C (ceiling: duplication not measured)`.
@@ -179,6 +234,14 @@ files" or "turn on golangci-lint `dupl` with `new-from-merge-base`". It can move
 copied-code catch, the Guardrails catch rate and the Consistency grade, such as
 "Consistency C to B". When duplication suppressions aren't checked, name the check,
 such as `CODEOWNERS` on `.jscpd.json` with reviews required, for "Consistency B to A".
+
+**Generator fix.** When a common file type has no working generator or documented
+example, suggest naming one reference example file for each common file type in
+`AGENTS.md` or `CLAUDE.md`, or adding a generator, naming the tool for this stack,
+such as a Rails generator in `lib/generators` or a plop template. When a generator is
+stale, name it and the check its output failed, and suggest fixing or removing its
+templates. When a generator needs prompts, suggest adding flags for its answers or
+naming an example file. It can move the Consistency grade, such as "Consistency C to B".
 
 ## Guardrails
 

@@ -16,7 +16,7 @@ it. An "unknown" estimate is fine, because the budget is the limit.
 
 - Run the baseline with CI's coverage settings, so later steps can reuse its
   coverage report.
-- Keep the last quarter of the budget for items 5 to 9 of step 4. Stop running
+- Keep the last quarter of the budget for items 5 to 10 of step 4. Stop running
   seeded bugs when you reach it.
 - **Suite over 5 minutes:** run each bug against its relevant tests first. Run the
   full commands only on bugs those tests miss, while budget remains.
@@ -33,11 +33,17 @@ it. An "unknown" estimate is fine, because the budget is the limit.
   the tests covering the touched file, an overall gate the full run. Then run the
   full commands on any violation those miss. Plant the required types first. A
   violation that never ran leaves the sample.
+- **Feedback hooks** run with item 3 of step 4, before the last quarter. Cap the cold
+  run at about 2 minutes, and the judged run at its limit: 5 seconds for the
+  edit-time hook, 60 seconds for the scoped checks hook. Hitting the cap fails. Skip
+  the judged run when the cold run took more than twice the limit, because it fails.
 - **Short of time in the last quarter,** drop work in this order: first, the full
   commands on violations their likely checks missed; then, violations beyond the
   first 5 that ran; then, a coverage type whose gate needs a full run that won't
-  fit, which leaves the sample. Drop fresh agents and required types last. Fresh
-  agents need the clean clone, so don't run them while a patch is applied.
+  fit, which leaves the sample; then, generator smoke tests beyond the first; then,
+  the first generator smoke test. Drop fresh agents and required types last. Fresh
+  agents need the clean clone, so don't run them while a patch is applied or
+  generator output is in the clone.
 
 ## Seeded bugs (Verification)
 
@@ -169,6 +175,75 @@ gh run list --workflow <main workflow> --branch <default branch> --limit 50 \
 CI time is the median duration of successful runs. Treat the share of runs with
 `attempt` above 1 as the flaky rate. Without `gh`, or on another CI system, both
 are optional and left out, as [scoring.md](scoring.md) explains.
+
+## Feedback hooks (Feedback speed)
+
+Time the edit-time feedback hook and the scoped checks hook, as
+[scoring.md](scoring.md) defines them, on the production file used for relevant
+tests. A hook command is the repo's code, so run it only with `sandbox run` in the
+clone, and list it in the plan. Don't run a hook that deploys, publishes or reaches
+services beyond the plan; it's not measured. A hook that can't run because this
+machine lacks a tool the docs name is not measured too, as in "When the baseline
+fails". With no such hook, the requirement isn't met.
+
+Write the hook to a script in `save_dir`, such as `hooks/post-edit.sh`, with its
+commands copied exactly from the settings or hook config, and time it inside the
+script with a sub-second clock. For agent hooks, the script reads the payload once,
+with `payload=$(cat)`, and pipes it to each hook that matches the event, run in
+parallel with `&` and then `wait`, as Claude Code does. It saves each hook's exit
+code, stdout and stderr separately, and each hook is judged on its own reporting
+channels. For a git hook, the script runs the one command git would run, with
+`</dev/null`. Run the script twice, running `sandbox restore` and redoing the change
+between runs, and judge and time the second run, so a cold cache doesn't count.
+"Budget" caps both runs. If a hook's cache file isn't ignored by git, restore deletes
+it, so note that both runs were cold. Save the scripts, payloads, patches and times.
+On a rerun, reuse them unless the hook's command or event changed; then rewrite them
+and say so in the report.
+
+**Edit-time feedback hook.** Plant a lint violation the hook flags, or a formatting
+break if it only formats, and run
+`sandbox capture hooks/edit.patch`. Apply it, then send the script the payload its
+agent tool sends, naming that file, with the project dir set to the clone. For Claude
+Code, save an empty `hooks/transcript.jsonl` and this payload, with a `tool_name` the
+hook's matcher matches, as `hooks/post-edit.json`:
+
+```json
+{"session_id":"afs-hooks","transcript_path":"<save_dir>/hooks/transcript.jsonl",
+ "cwd":"<sandbox>","hook_event_name":"PostToolUse","tool_name":"Edit",
+ "tool_input":{"file_path":"<sandbox>/<file>"},
+ "tool_response":{"filePath":"<sandbox>/<file>","success":true}}
+```
+
+```bash
+sandbox run -- env CLAUDE_PROJECT_DIR=<sandbox> bash <save_dir>/hooks/post-edit.sh \
+  < <save_dir>/hooks/post-edit.json
+```
+
+It meets the requirement if it reports the problem, or the fix it made, as
+[scoring.md](scoring.md) says, the planted change is still there apart from
+formatting the hook fixed, and it took under 5 seconds. Then run `sandbox restore`.
+
+**Scoped checks hook.** Make a one-line change that keeps behaviour, such as renaming
+a local variable, and run `sandbox capture hooks/change.patch`. Apply it. For a
+pre-commit hook, stage it with `sandbox run -- git add -A`, then run the script
+without committing. Its command is how git would run the hook, such as
+`lefthook run pre-commit`, `pre-commit run` or the hook file the documented setup
+installed in the clone. For an agent end-of-turn hook, send its payload as above. For
+a Claude Code `Stop` hook that's:
+
+```json
+{"session_id":"afs-hooks","transcript_path":"<save_dir>/hooks/transcript.jsonl",
+ "cwd":"<sandbox>","hook_event_name":"Stop","stop_hook_active":false}
+```
+
+It meets the requirement if it lints the changed file, selects tests by the change,
+and takes under 60 seconds and either at most half the full run in "Timings" or under
+10 seconds. Judge the selection from the command, such as `vitest related`,
+`--findRelatedTests` or `go test` on the changed packages, and confirm from its
+output that it ran fewer tests than the full run. If the baseline was stopped, its
+full-run time is at least how long it ran. Failing on the change is fine. If the repo
+has both kinds, time each, and either one passing meets it. Then run
+`sandbox restore`, which discards the staged change with hooks off.
 
 ## Reproducible setup (Feedback speed)
 
@@ -423,19 +498,29 @@ but git history can still show them. If an agent says it read one, disclose it t
 same way as a test that was read.
 
 **Repo questions.** Write 6 questions an agent starting a task here would need
-answered, with an answer key you checked against the code. For example: which
-command proves a change to a given area works, where a given rule is enforced,
-which module owns a given concern, what a new endpoint must do.
+answered, with an answer key you checked against the code. Ask one each on: what an
+agent must not do without asking, which environment variables and services are
+needed to run the project, what kind of test a change to a named area needs and where
+it goes, why a notable design choice was made, whether there's an existing helper for
+a common concern, and how to add a new file of a common type. Where one of these
+doesn't apply, ask another question instead, such as which command proves a change to
+a given area works, where a given rule is enforced, which module owns a given concern
+or what a new endpoint must do.
 
-Where it applies, the six must include one each on: what an agent must not do without
-asking, which environment variables and services are needed to run the project, what
-kind of test a change to a named area needs and where it goes, why a notable design
-choice was made, and whether there's an existing helper for a common concern. For the
-design choice, choose the one with the most effect on a typical change, before
-checking whether the docs explain it. For the helper, choose a concern with a helper
-that has several call sites, such as date formatting, API errors or retries. The
-question names the concern, not the helper, and the key names the helper's module and
-function. This shows whether an agent can find code to reuse.
+For the design choice, choose the one with the most effect on a typical change,
+before checking whether the docs explain it. For the helper, choose a concern with a
+helper that has several call sites, such as date formatting, API errors or retries.
+The question names the concern, not the helper, and the key names the helper's module
+and function. This shows whether an agent can find code to reuse.
+
+For the new file, ask "How should I add a new X?", where X is the first common file
+type in the ranking in "Generators" below. The key names its generator command or its
+documented example, as [scoring.md](scoring.md) defines them, whether or not the smoke
+test later passes, because this tests whether an agent can find the starting point.
+With both, either answer is correct. With neither, keep the question and say so in the
+key. Then no answer is correct, including choosing an existing file to copy. On a
+rerun, X is the first of the saved 3; if it was replaced, the report names the
+question as replaced.
 
 If nothing in the repo answers a question, code included, keep it and say so in the
 key. An agent saying "the repo doesn't say" is honest but isn't correct, because this
@@ -443,7 +528,7 @@ measures what the repo tells an agent. A correct answer read from the code count
 such as a list of environment variables.
 
 Save both in `context/questions.md`. On a rerun, reuse them, updating the key if the
-code changed. If an older set lacks any of those five, replace the questions closest
+code changed. If an older set lacks any of those six, replace the questions closest
 in topic to the missing ones, never choosing by which questions failed. The report
 names the questions removed and the ones added. Give the agent only this:
 
@@ -491,6 +576,37 @@ deliberate choice, so label it low confidence.
   the docs name a preferred one. Save the search commands, and reuse them on a rerun.
 - **Hotspots:** the hotspot list above, plus the 10 largest non-generated files.
   Note files on both lists. With shallow history, this is "not measured".
+
+## Generators (Consistency)
+
+**Common file types.** In step 1 of [SKILL.md](../SKILL.md), group production files
+with `git ls-files` by one folder and one name suffix, such as `app/controllers/` and
+`_controller.rb`, subfolders included, never a catch-all such as `src/**/*.ts`. Each
+group with at least 5 files is a common file type. Rank them by their files' summed
+change count from the hotspots' `git log` command in "Writing them", then by file
+count, and score the first 3. With shallow history, rank by file count. For each, note
+its generator and documented example, as [scoring.md](scoring.md) defines them. Save
+the patterns, counts and ranking. On a rerun, keep the saved 3, so grades compare like
+for like. Replace only a type that no longer qualifies, with the next in a fresh
+ranking, and report the change.
+
+**Smoke test.** For each scored type with a generator, in rank order, run the
+generator in the clone with `sandbox run`, with the name `AfsSmoke`. Run it
+non-interactively: pass answers as flags and close stdin, such as `</dev/null`. One
+that can't run without prompts doesn't count as working for its type, because an
+agent can't answer prompts either. Then run lint, format, typecheck and
+the tests relevant to the new files, including any the generator wrote, then
+`sandbox restore`. Output that fails one of those where the baseline passed means a
+**stale generator**. Report it as a finding. Coverage and duplication gates don't
+count here.
+
+The plan lists each generator command. A generator that changes a schema, such as a
+migration, runs only against a throwaway database the plan lists, which you reset
+afterwards, because `sandbox restore` doesn't undo it. If there's none, or a generator
+or its tests would reach services or the network beyond what the plan allows, don't
+run it, and mark that smoke test not measured. Stop any services it starts. Save the
+commands and results, and label them measured. On a rerun, reuse the saved commands
+unless the generator changed; then rewrite them and say so in the report.
 
 ## Merge rules (Guardrails, optional)
 
