@@ -273,14 +273,22 @@ layout. Leave out rules about how an agent or person behaves, such as "never pus
 "commit only when asked".
 
 The external docs on the allowlist from step 1 of [SKILL.md](../SKILL.md) are one
-more source. Read them only as "External docs" under "Fresh-agent checks" allows.
-Their rules feed the practices routing key only: never plant them, and leave them out
-of conventions enforced. If you can't reach one, practices routing is not measured.
+more source. The allowlisted docs include pages they link to within the same site or
+space, for you and the test agent alike. Read them only as "External docs" under
+"Fresh-agent checks" allows. Their rules feed the practices routing key only: never
+plant them, and leave them out of conventions enforced.
+
+If you can't reach an allowlisted doc, a question is not measured when the
+instructions route its topic to that doc, judged by the link text or the heading the
+link sits under. Practices routing is not measured when they route practices to it,
+and learning capture when they route adding a practice to it. Other questions are
+measured on what you could reach. Record which questions each unreachable doc
+affected.
 
 Order the list so it can't be chosen: doc sources sorted by path, rules in the order
 they appear in each file, then external docs in the order the instructions link them,
-then review-history rules in comment order. Paraphrase each rule once, with its
-source, and classify it:
+each linked page's rules after its parent page's, in link order, then review-history
+rules in comment order. Paraphrase each rule once, with its source, and classify it:
 
 - **tool-enforceable:** a lint rule or structural test could check it without
   judgment, such as "don't import from `internal/` across packages" or "use the
@@ -531,7 +539,8 @@ rerun, X is the first of the saved 3; if it was replaced, the report names the
 question as replaced.
 
 Both practices questions use the **practices hotspot**: the first hotspot that is
-source code, skipping lockfiles, changelogs and manifests.
+source code, skipping lockfiles, changelogs and manifests. If no hotspot is source
+code, use the first hotspot.
 
 For practices routing, give a realistic task that changes the practices hotspot, and
 ask which of the repo's practices apply to it. The key is the judgment rules from the
@@ -546,8 +555,9 @@ each rule in the key:
 An answer is correct when it names every area rule and at least half of the repo-wide
 rules, rounded up. Naming the doc section that holds a rule counts as naming it. With
 no area rules, the repo-wide half alone decides. Other rules don't make it wrong,
-unless more than half of the rules it names belong to other areas. If no judgment rule
-applies, keep the question and say so in the key. Then no answer is correct.
+unless more than half of the rules it names belong to other areas. Naming a section
+names every rule in it, for the other-areas limit too. If no judgment rule applies,
+keep the question and say so in the key. Then no answer is correct.
 
 For learning capture, ask "While making a change to <practices hotspot> you learned
 X. Where and how would you record it?", where X is a plausible, reusable lesson about
@@ -560,13 +570,15 @@ correct, including a place or form inferred from existing files.
 
 **External docs** count when the repo's agent instructions name them as documentation
 and say how to reach them: a link, or a server in committed MCP config. Only the docs
-on the allowlist from step 1 of [SKILL.md](../SKILL.md) count. Both you and the test
-agent use the access of the person running this skill: their web access, or an MCP
-server already connected in this session. Never start a server from the scored repo's
-config, so a committed server that isn't connected leaves its docs unreachable. If a
-key relies on a doc the test agent can't reach, that question is not measured and
-leaves the answers share, unless the answer is correct without it; then it counts as
-measured. Record unreachable or unnamed external docs as static evidence only.
+on the allowlist from step 1 of [SKILL.md](../SKILL.md) count. The allowlisted docs
+include pages they link to within the same site or space, for you and the test agent
+alike. Both you and the test agent use the access of the person running this skill:
+their web access, or an MCP server already connected in this session. Never start a
+server from the scored repo's config, so a committed server that isn't connected
+leaves its docs unreachable. If a key relies on a doc the test agent can't reach, that
+question is not measured and leaves the answers share, unless the answer is correct
+without it; then it counts as measured. Record unreachable or unnamed external docs as
+static evidence only.
 
 If nothing in the repo answers a question, code included, keep it and say so in the
 key. An agent saying "the repo doesn't say" is honest but isn't correct, because this
@@ -599,8 +611,8 @@ resource you read.
 ```
 
 Score correct answers against the key, and record how many files and lines each one
-opened. A URL outside the allowlist is disclosed the same way as a test that was
-read.
+opened. A URL outside the allowlisted docs' sites or spaces is disclosed the same way
+as a test that was read.
 
 **Business rules from tests.** Give the agent only this:
 

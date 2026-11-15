@@ -360,7 +360,8 @@ category was out of 10: 10 is C, 5 is D and 0 is F.
 If the previous run's `rules_version` differs from the "Rules version" at the top of
 [references/scoring.md](references/scoring.md), or it has none, as with every older
 run, say once in "Since the last run" that the rules changed since the last run, so a
-lower grade isn't read as a regression.
+lower grade isn't read as a regression. Also say when an external doc changed since
+the last run, by its last-edited time or revision.
 
 Save these in `save_dir`, alongside the patches, context files and conventions list
 from step 4. They are what reruns compare against:
@@ -371,12 +372,13 @@ from step 4. They are what reruns compare against:
   state (required, not required or left out), push protection (on, off or left out),
   the test isolation result, setup findings, questions added, removed or replaced, the
   practices routing and learning capture results, each external doc with whether it
-  could be reached, how (MCP server or web) and by whom (you or the test agent), who
-  wrote the bugs, the result for each patch, the common file types with their
-  patterns, counts, ranking, generators and example files, the generator smoke-test
-  results, each feedback hook's event, command, result (met, failed or not measured),
-  how it reported and time, and the exact commands and searches used, so the next run
-  can compare and repeat them.
+  could be reached, how (MCP server or web) and by whom (you or the test agent), the
+  date read, its last-edited time or revision where the source shows one, and the
+  questions an unreachable doc affected, who wrote the bugs, the result for each
+  patch, the common file types with their patterns, counts, ranking, generators and
+  example files, the generator smoke-test results, each feedback hook's event,
+  command, result (met, failed or not measured), how it reported and time, and the
+  exact commands and searches used, so the next run can compare and repeat them.
 
 Then run `sandbox finish --complete --report-to <folder>`, or leave out `--report-to`
 if the user chose the home folder only. This compares the scored repo first and

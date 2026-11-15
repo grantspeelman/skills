@@ -156,8 +156,10 @@ behind one. A **practices index** is a list in the agent instructions that route
 task area to the practices for that area. The **practices routing** and **learning
 capture** questions in [checks.md](checks.md) measure whether an agent can find the
 practices for a task and knows how to add a new one. Both apply to every repo, so
-neither is ever N/A. If either is not measured, it blocks B and A as a ceiling, such
-as `C (ceiling: practices routing not measured)`.
+neither is ever N/A. If either is not measured, including when an unreachable
+external doc holds what it needs, as [checks.md](checks.md) says, it blocks B and A as
+a ceiling, such as `C (ceiling: practices routing not measured)` or
+`C (ceiling: learning capture not measured)`.
 
 | Grade | Static | Measured |
 |-------|--------|----------|
