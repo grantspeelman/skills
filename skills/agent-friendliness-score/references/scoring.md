@@ -1,6 +1,6 @@
 # Scoring
 
-Rules version: 2
+Rules version: 3
 
 Bump it when a change to scoring.md or checks.md can move a grade. `result.json`
 saves it as `rules_version`, so a rerun can tell a rule change from a regression.
@@ -150,16 +150,30 @@ Can an agent find what it needs without flooding its context? "Answers" is the s
 of repo questions answered correctly. "Rules match" is defined in
 [checks.md](checks.md).
 
+**Practices** are the judgment rules in the conventions list in
+[checks.md](checks.md): rules a linter can't enforce, though they may state the idea
+behind one. A **practices index** is a list in the agent instructions that routes by
+task area to the practices for that area. The **practices routing** and **learning
+capture** questions in [checks.md](checks.md) measure whether an agent can find the
+practices for a task and knows how to add a new one. Both apply to every repo, so
+neither is ever N/A. If either is not measured, including when an unreachable
+external doc holds what it needs, as [checks.md](checks.md) says, it blocks B and A as
+a ceiling, such as `C (ceiling: practices routing not measured)` or
+`C (ceiling: learning capture not measured)`.
+
 | Grade | Static | Measured |
 |-------|--------|----------|
 | F | No usable README or agent instructions. | Answers below 20%. |
 | D | A README only, or agent instructions so long they don't work as an index. | Answers at least 20%. |
 | C | An `AGENTS.md` or `CLAUDE.md` of at most about 150 lines that points to deeper docs, rules that carry reasons, and at most 3 servers in committed MCP config. | Answers at least 50%. |
-| B | | Answers at least 70%, and rules match at least 50%. |
-| A | | Answers at least 85%, rules match at least 75%, and a median of 5 files or fewer opened per answer. |
+| B | | Answers at least 70%, rules match at least 50%, and the practices routing and learning capture questions answered correctly. |
+| A | | Answers at least 85%, rules match at least 75%, the practices routing and learning capture questions answered correctly, and a median of 5 files or fewer opened per answer. |
 
 Only committed MCP config counts. What's on a developer's machine isn't evidence
-about the repo.
+about the repo. External docs count only as [checks.md](checks.md) says: the repo's
+instructions name them and how to reach them, through a link or committed MCP config,
+and the test agent reaches them with the access of the person running this skill.
+More or longer docs don't raise the grade.
 
 Record these as static evidence. They don't change the Context grade: committed
 agent settings, hooks, skills and editor rules, such as `.claude/settings.json`,
@@ -169,7 +183,19 @@ A `CLAUDE.md` with no `AGENTS.md` leaves Codex without them. When scoring a pack
 check for instruction files that apply to that package's path. Feedback speed grades
 the hooks defined there. Also record whether the instructions or docs describe a
 testing approach, such as TDD, writing testable code, where tests go and what kind of
-tests to write.
+tests to write. Record the practices docs, whether there's a practices index, the
+documented process for adding a practice, and each external doc the instructions name,
+with how it's reached and whether this run could reach it.
+
+**Practices fix.** When the practices routing or learning capture question failed,
+suggest a short practices index in `AGENTS.md` that routes by task area to the docs
+holding each area's practices, and a short "Adding a practice" section saying where a
+new practice goes, its form, and what qualifies: a reusable practice, not a one-off
+fix. `AGENTS.md` is what Codex reads, so if the repo has only `CLAUDE.md`, suggest
+moving the instructions to `AGENTS.md` and importing it from `CLAUDE.md` with
+`@AGENTS.md`. Suggest writing down the judgment calls reviewers most often correct,
+from review history, that the docs don't state yet. Keep the index short, so it works
+as an index. It can move the Context grade, such as "Context C to B".
 
 ## Consistency
 
@@ -364,7 +390,8 @@ allowlist, and dismissed CodeQL alerts if `gh` can read them. Brakeman
 This is N/A where no scanner the repo runs can be suppressed.
 
 **Conventions enforced** is the share of tool-enforceable conventions that a lint
-rule or structural test enforces, in CI or a documented hook. [checks.md](checks.md)
+rule or structural test enforces, in CI or a documented hook, leaving out rules from
+external docs. [checks.md](checks.md)
 says how to build the list, and how planted violations override it. It's N/A only
 when the repo has no production code, such as docs or config only. Otherwise, with no
 tool-enforceable convention in the docs or review history, it's 0%, so B and A aren't

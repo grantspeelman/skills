@@ -57,7 +57,8 @@ fit the suite. First list:
   plus anything else the repo uses.
 - **Hotspots**, the production files most changed in the last 6 months, from
   `git log --since='6 months ago' --name-only --format= | sort | uniq -c | sort -rn`,
-  without the test paths or earlier reports. If history is shallow, use the largest production files.
+  without the test paths or earlier reports. If history is shallow or this list is
+  empty, use the largest production files by line count, ties broken by path.
 
 On a rerun, read only the earlier patches at this stage, not the earlier report.
 Starting from the highest numbered, test patches with `sandbox apply` and
@@ -272,9 +273,24 @@ report. Only rules about the repo's content go in: code, tests, config, docs and
 layout. Leave out rules about how an agent or person behaves, such as "never push" or
 "commit only when asked".
 
+The external docs on the allowlist from step 1 of [SKILL.md](../SKILL.md) are one more
+source. The allowlisted docs include pages under the same URL path prefix, or in the
+same space, such as a Notion or Confluence space, that they link to directly or
+through other such pages. Never the repo's own hosting pages. Read them only as
+"External docs" under "Fresh-agent checks" allows. Their rules feed the practices
+routing key only: never plant them, and leave them out of conventions enforced.
+
+If you can't reach an allowlisted doc, a question is not measured when the
+instructions route its topic to that doc, judged by the link text or the heading the
+link sits under. Practices routing is not measured when they route practices to it,
+and learning capture when they route adding a practice to it. Other questions are
+measured on what you could reach. Record which questions each unreachable doc
+affected.
+
 Order the list so it can't be chosen: doc sources sorted by path, rules in the order
-they appear in each file, then review-history rules in comment order. Paraphrase each
-rule once, with its source, and classify it:
+they appear in each file, then external docs in the order the instructions link them,
+each linked page's rules after its parent page's, in link order, then review-history
+rules in comment order. Paraphrase each rule once, with its source, and classify it:
 
 - **tool-enforceable:** a lint rule or structural test could check it without
   judgment, such as "don't import from `internal/` across packages" or "use the
@@ -497,15 +513,17 @@ already read the repo.
 but git history can still show them. If an agent says it read one, disclose it the
 same way as a test that was read.
 
-**Repo questions.** Write 6 questions an agent starting a task here would need
+**Repo questions.** Write 8 questions an agent starting a task here would need
 answered, with an answer key you checked against the code. Ask one each on: what an
 agent must not do without asking, which environment variables and services are
 needed to run the project, what kind of test a change to a named area needs and where
 it goes, why a notable design choice was made, whether there's an existing helper for
-a common concern, and how to add a new file of a common type. Where one of these
-doesn't apply, ask another question instead, such as which command proves a change to
-a given area works, where a given rule is enforced, which module owns a given concern
-or what a new endpoint must do.
+a common concern, how to add a new file of a common type, which practices apply to a
+task (**practices routing**), and where to record a lesson (**learning capture**).
+Where one of the first six doesn't apply, ask another question instead, such as which
+command proves a change to a given area works, where a given rule is enforced, which
+module owns a given concern or what a new endpoint must do. The last two apply to
+every repo.
 
 For the design choice, choose the one with the most effect on a typical change,
 before checking whether the docs explain it. For the helper, choose a concern with a
@@ -522,27 +540,92 @@ key. Then no answer is correct, including choosing an existing file to copy. On 
 rerun, X is the first of the saved 3; if it was replaced, the report names the
 question as replaced.
 
+Both practices questions use the **practices hotspot**: the first hotspot that is
+source code, skipping lockfiles, changelogs and manifests. If no hotspot is source
+code, use the first hotspot. If the hotspot list wasn't built, because the repo has no
+tests, build it now with the `git log` command in "Writing them". Either way, if the
+`git log` list is empty, or history is shallow, don't use the largest production
+files. Use instead the first file, by path, of the first-ranked common file type; else
+the largest non-generated source file; else the largest non-generated file. Largest
+means by line count, ties broken by path.
+
+For practices routing, give a realistic task that changes the practices hotspot, and
+ask which of the repo's practices apply to it. The key is the judgment rules from the
+conventions list, built in item 5 of step 4, that apply to that change. Leave out
+rules whose only source is review history, because that changes between runs. Label
+each rule in the key:
+
+- **area rule:** its source names the hotspot's folder, layer or file type, or it sits
+  in a doc or section for that area.
+- **repo-wide rule:** it applies to any change.
+
+An answer is correct when it names every area rule and at least half of the repo-wide
+rules, rounded up. Naming the doc section that holds a rule counts as naming it. With
+no area rules, the repo-wide half alone decides. Other rules don't make it wrong,
+unless more than half of the rules it names belong to other areas. Naming a section
+names every rule in it, for the other-areas limit too. If no judgment rule applies,
+keep the question and say so in the key. Then no answer is correct.
+
+For learning capture, ask "While making a change to <practices hotspot> you learned
+X. Where and how would you record it?", where X is a plausible, reusable lesson about
+that area that the docs don't state yet. The key is the repo's documented process:
+where a lesson goes, in what form, and what kind of lesson qualifies, such as a
+reusable practice, not a one-off fix. An answer is correct when it gives the place and
+form, and says whether X qualifies by the documented test. If the docs don't state all
+three, keep the question and say in the key which part is missing. Then no answer is
+correct, including a place or form inferred from existing files.
+
+**External docs** count when the repo's agent instructions name them as documentation
+and say how to reach them: a link, or a server in committed MCP config. Only the docs
+on the allowlist from step 1 of [SKILL.md](../SKILL.md) count. The allowlisted docs
+include pages under the same URL path prefix, or in the same space, such as a Notion
+or Confluence space, that they link to directly or through other such pages. Never the
+repo's own hosting pages. Both you and the test agent use the access of the person
+running this skill: their web access, or an MCP server already connected in this
+session. Never start a server from the scored repo's config, so a committed server
+that isn't connected leaves its docs unreachable. If a key relies on a doc the test
+agent can't reach, that question is not measured and leaves the answers share, unless
+the answer is correct without it; then it counts as measured. Record unreachable or
+unnamed external docs as static evidence only. If you couldn't reach one,
+"Conventions" says which questions are not measured.
+
 If nothing in the repo answers a question, code included, keep it and say so in the
 key. An agent saying "the repo doesn't say" is honest but isn't correct, because this
 measures what the repo tells an agent. A correct answer read from the code counts,
-such as a list of environment variables.
+such as a list of environment variables, except where a rule above says no answer is
+correct.
 
-Save both in `context/questions.md`. On a rerun, reuse them, updating the key if the
-code changed. If an older set lacks any of those six, replace the questions closest
-in topic to the missing ones, never choosing by which questions failed. The report
-names the questions removed and the ones added. Give the agent only this:
+Save both in `context/questions.md`, with each routing rule's area or repo-wide label,
+so reruns reuse it, and the docs each key relies on, with each doc's revision or
+last-edited time where the source shows one. On a rerun, reuse them. Refresh a key
+when the code or the conventions list changed, or when a doc it relies on changed,
+external docs included: by revision or last-edited time where the source shows one,
+otherwise by reading the doc again. If the docs now state the learning-capture X,
+choose a new X and report the question as replaced. If an older set lacks any of those
+eight, add each missing one that applies, then trim the set to eight by removing the
+questions not on the list that are closest in topic to the added ones, never choosing
+by which questions failed. The report names the questions removed and the ones added.
+Give the agent only this:
 
 ```text
 Answer these questions about the repository at <sandbox>, using only what is in
-that repository. Don't use the web. Don't run the tests. Don't open files named
+that repository, plus these external docs: <allowlist, or none>. You may follow links
+only under those docs' URL path or within their space, never to this repository's
+code, pull requests, issues or releases. Don't use the web otherwise. If you can't
+reach one of those docs, say which. Only read. Don't create, edit or comment on
+anything in the repository or in those docs; describe what you would do. Don't run
+the tests. Don't open files named
 like agent-friendliness-report-20261103T155624Z.md, or see them through git history. If you read one
 anyway, say which file. If the repository doesn't answer a question, say so rather
-than guessing. For each answer, list the files you opened.
+than guessing. For each answer, list the files you opened and every URL or MCP
+resource you read.
 
 <questions>
 ```
 
-Score correct answers against the key, and record how many files each one took.
+Score correct answers against the key, and record how many files and lines each one
+opened. A URL outside those docs' URL paths or spaces is disclosed the same way as a
+test that was read.
 
 **Business rules from tests.** Give the agent only this:
 
@@ -574,8 +657,10 @@ deliberate choice, so label it low confidence.
   handling, validation, data access, HTTP calls, config, logging, auth checks or
   state. Count the distinct approaches with repeatable searches, and check whether
   the docs name a preferred one. Save the search commands, and reuse them on a rerun.
-- **Hotspots:** the hotspot list above, plus the 10 largest non-generated files.
-  Note files on both lists. With shallow history, this is "not measured".
+- **Hotspots:** the hotspot list above, built as "Writing them" says if the repo has
+  no tests, plus the 10 largest non-generated files.
+  Note files on both lists. With shallow history or an empty `git log` list, this is
+  "not measured".
 
 ## Generators (Consistency)
 
