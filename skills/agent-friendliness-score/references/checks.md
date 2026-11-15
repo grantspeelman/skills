@@ -497,15 +497,17 @@ already read the repo.
 but git history can still show them. If an agent says it read one, disclose it the
 same way as a test that was read.
 
-**Repo questions.** Write 6 questions an agent starting a task here would need
+**Repo questions.** Write 8 questions an agent starting a task here would need
 answered, with an answer key you checked against the code. Ask one each on: what an
 agent must not do without asking, which environment variables and services are
 needed to run the project, what kind of test a change to a named area needs and where
 it goes, why a notable design choice was made, whether there's an existing helper for
-a common concern, and how to add a new file of a common type. Where one of these
-doesn't apply, ask another question instead, such as which command proves a change to
-a given area works, where a given rule is enforced, which module owns a given concern
-or what a new endpoint must do.
+a common concern, how to add a new file of a common type, which practices apply to a
+task (**practices routing**), and where to record a lesson (**learning capture**).
+Where one of the first six doesn't apply, ask another question instead, such as which
+command proves a change to a given area works, where a given rule is enforced, which
+module owns a given concern or what a new endpoint must do. The last two apply to
+every repo.
 
 For the design choice, choose the one with the most effect on a typical change,
 before checking whether the docs explain it. For the helper, choose a concern with a
@@ -522,22 +524,49 @@ key. Then no answer is correct, including choosing an existing file to copy. On 
 rerun, X is the first of the saved 3; if it was replaced, the report names the
 question as replaced.
 
+For practices routing, give a realistic task that changes the first hotspot, and ask
+which of the repo's practices apply to it. The key is the judgment rules from the
+conventions list, built in item 5 of step 4, that apply to that change, including
+repo-wide ones. An answer is correct when it names each rule in the key, in its own
+words. Extra rules don't make it wrong. If no judgment rule applies, keep the
+question and say so in the key. Then no answer is correct.
+
+For learning capture, ask "While making a change to <first hotspot> you learned X.
+Where and how would you record it?", where X is a plausible, reusable lesson about
+that area that the docs don't state yet. The key is the repo's documented process:
+where a lesson goes, in what form, and what kind of lesson qualifies, such as a
+reusable practice, not a one-off fix. An answer is correct when it gives the place and
+form, and says whether X qualifies by the documented test. If the docs don't state all
+three, keep the question and say in the key which part is missing. Then no answer is
+correct.
+
+**External docs** count when the repo's agent instructions name them and how to reach
+them: a link, or a server in committed MCP config. The test agent uses the access of
+the person running this skill, such as a connected MCP server or their web access. If
+a key relies on such docs and you or the test agent can't reach them, that question is
+not measured and leaves the answers share. Record unreachable or unnamed external docs
+as static evidence only.
+
 If nothing in the repo answers a question, code included, keep it and say so in the
 key. An agent saying "the repo doesn't say" is honest but isn't correct, because this
 measures what the repo tells an agent. A correct answer read from the code counts,
 such as a list of environment variables.
 
 Save both in `context/questions.md`. On a rerun, reuse them, updating the key if the
-code changed. If an older set lacks any of those six, replace the questions closest
-in topic to the missing ones, never choosing by which questions failed. The report
-names the questions removed and the ones added. Give the agent only this:
+code or the conventions list changed. If an older set lacks any of those eight, add
+each missing one. If that takes the set over eight, remove the questions not on the
+list that are closest in topic to the added ones, never choosing by which questions
+failed. The report names the questions removed and the ones added. Give the agent
+only this:
 
 ```text
 Answer these questions about the repository at <sandbox>, using only what is in
-that repository. Don't use the web. Don't run the tests. Don't open files named
+that repository, plus docs its agent instructions link to or reach through its
+committed MCP config. Don't use the web otherwise. If you can't reach one of those
+docs, say which. Don't run the tests. Don't open files named
 like agent-friendliness-report-20261103T155624Z.md, or see them through git history. If you read one
 anyway, say which file. If the repository doesn't answer a question, say so rather
-than guessing. For each answer, list the files you opened.
+than guessing. For each answer, list the files and external docs you opened.
 
 <questions>
 ```
