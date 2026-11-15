@@ -112,6 +112,8 @@ mistakes and a damaged state file, nothing stronger.
   a subagent, say so in the report and `result.json`, the same way as a test that was
   read.
 - Run `gh` from the scored repo, because the clone has no remote.
+- External docs are read only. Don't create, edit or comment on anything in them, or
+  have a subagent do so.
 
 ## 1. Read the repo
 
@@ -145,9 +147,13 @@ hooks, and whether a hook scans for secrets before commit or push. Find the comm
 file types, as "Generators" in [references/checks.md](references/checks.md) says, with
 each one's generator and documented example. Read the docs and agent instructions;
 step 4 builds the conventions list from them. Note the practices docs, any practices
-index, the documented process for adding a practice, as scoring.md defines them, and
-any external docs the instructions name, with how to reach them. Note whether the
-working tree has uncommitted changes, because only the commit gets scored.
+index and the documented process for adding a practice, as scoring.md defines them.
+List the external docs the instructions name as documentation, with each one's URL or
+MCP server name, in the order they're linked. That's the allowlist for "External
+docs" in [references/checks.md](references/checks.md). Leave out the repo's own
+hosting pages, such as its code, pull requests, issues, releases and wiki history,
+because they can show more than the scored commit. Note whether the working tree has
+uncommitted changes, because only the commit gets scored.
 
 Look for services the tests may touch: Docker Compose files, database and queue
 config, required environment variables, and HTTP calls without a stub library. This
@@ -177,6 +183,7 @@ Commands:     bin/test, bin/lint, bin/typecheck, bundle exec brakeman, from CI.
 Install:      bundle install in a throwaway clone (runs install scripts)
 Services:     Postgres from docker-compose.yml. No external URLs found.
 Local data:   tests write to the local database payments_test
+External:     docs.example.com/handbook (web), team-wiki (connected MCP server)
 Credentials:  unset by name for test runs: AWS_SECRET_ACCESS_KEY, GH_TOKEN
               kept for install only: none
               tests can read these: ~/.aws, ~/.netrc
@@ -296,7 +303,7 @@ Show the report in this shape. The data here is made up.
 ```text
 Verification    B  ███████████████░░░░░  7 of 10 seeded bugs caught
 Feedback speed  B  ███████████████░░░░░  relevant tests in 3m 40s
-Context         C  ██████████░░░░░░░░░░  6 of 8 answers correct  (ceiling: rules match not measured)
+Context         C  ██████████░░░░░░░░░░  6 of 8 answers correct, practices routing missed  (ceiling: rules match not measured)
 Consistency     B  ███████████████░░░░░  4.1% duplication  (low confidence)
 Guardrails      B  ███████████████░░░░░  8 of 10 violations caught
 ```
@@ -330,13 +337,14 @@ compare with care. Seeded bugs: 5 of 7 reused caught, 2 of 3 new caught, 7 of 10
 together. Commit 91bd03e to 4f2a91c.
 ````
 
-The report opens with the grade card, one line per category: the name, the grade,
-a bar of 20 cells with 5 filled per grade step (A 20, B 15, C 10, D 5, F 0), the
-main evidence, and then any notes in brackets. The notes are a ceiling with what it
-blocks, such as `(ceiling: rules match not measured)`, `(static only)` and
-`(low confidence)`. Consistency is always low confidence. A static-only category
-goes no higher than C, and its Evidence heading shows it with the grade, such as
-`C (static only)`.
+The report opens with the grade card, one line per category: the name, the grade, a
+bar of 20 cells with 5 filled per grade step (A 20, B 15, C 10, D 5, F 0), the main
+evidence, and then any notes in brackets. For Context, the main evidence names
+practices routing or learning capture when either was missed. The notes are a ceiling
+with what it blocks, such as `(ceiling: rules match not measured)`, `(static only)`
+and `(low confidence)`. Consistency is always low confidence. A static-only category
+goes no higher than C, and its Evidence heading shows it with the grade, such as `C
+(static only)`.
 
 If [references/scoring.md](references/scoring.md) calls for a "Not proven" line,
 put it straight under the card, before "This skill is a work in progress.", such as
@@ -358,16 +366,17 @@ Save these in `save_dir`, alongside the patches, context files and conventions l
 from step 4. They are what reruns compare against:
 
 - `report.md`: the report above.
-- `result.json`: commit, date, `rules_version`, each category's grade as a letter
-  and as points (A 20 to F 0), whether each category is measured, raw metrics, the
-  merge state (required, not required or left out), push protection (on, off or left
-  out), the test isolation result, setup findings, replaced questions, the practices
-  routing and learning capture results, each external doc with whether it could be
-  reached, who wrote the bugs, the result for each patch, the common file types with
-  their patterns, counts, ranking, generators and example files, the generator
-  smoke-test results, each feedback hook's event, command, result (met, failed or not
-  measured), how it reported and time, and the exact commands and searches used, so
-  the next run can compare and repeat them.
+- `result.json`: commit, date, `rules_version`, each category's grade as a letter and
+  as points (A 20 to F 0), whether each category is measured, raw metrics, the merge
+  state (required, not required or left out), push protection (on, off or left out),
+  the test isolation result, setup findings, questions added, removed or replaced, the
+  practices routing and learning capture results, each external doc with whether it
+  could be reached, how (MCP server or web) and by whom (you or the test agent), who
+  wrote the bugs, the result for each patch, the common file types with their
+  patterns, counts, ranking, generators and example files, the generator smoke-test
+  results, each feedback hook's event, command, result (met, failed or not measured),
+  how it reported and time, and the exact commands and searches used, so the next run
+  can compare and repeat them.
 
 Then run `sandbox finish --complete --report-to <folder>`, or leave out `--report-to`
 if the user chose the home folder only. This compares the scored repo first and

@@ -156,7 +156,8 @@ behind one. A **practices index** is a list in the agent instructions that route
 task area to the practices for that area. The **practices routing** and **learning
 capture** questions in [checks.md](checks.md) measure whether an agent can find the
 practices for a task and knows how to add a new one. Both apply to every repo, so
-neither is ever N/A.
+neither is ever N/A. If either is not measured, it blocks B and A as a ceiling, such
+as `C (ceiling: practices routing not measured)`.
 
 | Grade | Static | Measured |
 |-------|--------|----------|
@@ -170,7 +171,7 @@ Only committed MCP config counts. What's on a developer's machine isn't evidence
 about the repo. External docs count only as [checks.md](checks.md) says: the repo's
 instructions name them and how to reach them, through a link or committed MCP config,
 and the test agent reaches them with the access of the person running this skill.
-More or longer docs don't raise the grade, and C's length limit still applies.
+More or longer docs don't raise the grade.
 
 Record these as static evidence. They don't change the Context grade: committed
 agent settings, hooks, skills and editor rules, such as `.claude/settings.json`,
@@ -190,9 +191,9 @@ holding each area's practices, and a short "Adding a practice" section saying wh
 new practice goes, its form, and what qualifies: a reusable practice, not a one-off
 fix. `AGENTS.md` is what Codex reads, so if the repo has only `CLAUDE.md`, suggest
 moving the instructions to `AGENTS.md` and importing it from `CLAUDE.md` with
-`@AGENTS.md`. With no practices written down, suggest writing down the judgment calls
-reviewers most often correct. Keep the index short, so it works as an index. It can
-move the Context grade, such as "Context C to B".
+`@AGENTS.md`. Suggest writing down the judgment calls reviewers most often correct,
+from review history, that the docs don't state yet. Keep the index short, so it works
+as an index. It can move the Context grade, such as "Context C to B".
 
 ## Consistency
 
@@ -387,7 +388,8 @@ allowlist, and dismissed CodeQL alerts if `gh` can read them. Brakeman
 This is N/A where no scanner the repo runs can be suppressed.
 
 **Conventions enforced** is the share of tool-enforceable conventions that a lint
-rule or structural test enforces, in CI or a documented hook. [checks.md](checks.md)
+rule or structural test enforces, in CI or a documented hook, leaving out rules from
+external docs. [checks.md](checks.md)
 says how to build the list, and how planted violations override it. It's N/A only
 when the repo has no production code, such as docs or config only. Otherwise, with no
 tool-enforceable convention in the docs or review history, it's 0%, so B and A aren't
