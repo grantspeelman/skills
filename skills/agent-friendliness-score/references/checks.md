@@ -57,7 +57,8 @@ fit the suite. First list:
   plus anything else the repo uses.
 - **Hotspots**, the production files most changed in the last 6 months, from
   `git log --since='6 months ago' --name-only --format= | sort | uniq -c | sort -rn`,
-  without the test paths or earlier reports. If history is shallow, use the largest production files.
+  without the test paths or earlier reports. If history is shallow or this list is
+  empty, use the largest production files.
 
 On a rerun, read only the earlier patches at this stage, not the earlier report.
 Starting from the highest numbered, test patches with `sandbox apply` and
@@ -541,7 +542,11 @@ question as replaced.
 
 Both practices questions use the **practices hotspot**: the first hotspot that is
 source code, skipping lockfiles, changelogs and manifests. If no hotspot is source
-code, use the first hotspot.
+code, use the first hotspot. If the hotspot list wasn't built, because the repo has no
+tests, build it now with the `git log` command in "Writing them". Either way, if the
+`git log` list is empty, or history is shallow, don't use the largest production
+files. Use instead the first file, by path, of the first-ranked common file type; else
+the largest non-generated source file; else the largest non-generated file.
 
 For practices routing, give a realistic task that changes the practices hotspot, and
 ask which of the repo's practices apply to it. The key is the judgment rules from the
@@ -590,13 +595,16 @@ such as a list of environment variables, except where a rule above says no answe
 correct.
 
 Save both in `context/questions.md`, with each routing rule's area or repo-wide label,
-so reruns reuse it. On a rerun, reuse them, updating the key if the code or the
-conventions list changed. If the docs now state the learning-capture X, choose a new
-X and report the question as replaced. If an older set lacks any of those eight, add
-each missing one that applies, then trim the set to eight by removing the questions
-not on the list that are closest in topic to the added ones, never choosing by which
-questions failed. The report names the questions removed and the ones added. Give the
-agent only this:
+so reruns reuse it, and the docs each key relies on, with each doc's revision or
+last-edited time where the source shows one. On a rerun, reuse them. Refresh a key
+when the code or the conventions list changed, or when a doc it relies on changed,
+external docs included: by revision or last-edited time where the source shows one,
+otherwise by reading the doc again. If the docs now state the learning-capture X,
+choose a new X and report the question as replaced. If an older set lacks any of those
+eight, add each missing one that applies, then trim the set to eight by removing the
+questions not on the list that are closest in topic to the added ones, never choosing
+by which questions failed. The report names the questions removed and the ones added.
+Give the agent only this:
 
 ```text
 Answer these questions about the repository at <sandbox>, using only what is in
@@ -648,7 +656,8 @@ deliberate choice, so label it low confidence.
   handling, validation, data access, HTTP calls, config, logging, auth checks or
   state. Count the distinct approaches with repeatable searches, and check whether
   the docs name a preferred one. Save the search commands, and reuse them on a rerun.
-- **Hotspots:** the hotspot list above, plus the 10 largest non-generated files.
+- **Hotspots:** the hotspot list above, built as "Writing them" says if the repo has
+  no tests, plus the 10 largest non-generated files.
   Note files on both lists. With shallow history, this is "not measured".
 
 ## Generators (Consistency)
