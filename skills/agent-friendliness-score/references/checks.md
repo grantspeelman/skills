@@ -58,7 +58,7 @@ fit the suite. First list:
 - **Hotspots**, the production files most changed in the last 6 months, from
   `git log --since='6 months ago' --name-only --format= | sort | uniq -c | sort -rn`,
   without the test paths or earlier reports. If history is shallow or this list is
-  empty, use the largest production files.
+  empty, use the largest production files by line count, ties broken by path.
 
 On a rerun, read only the earlier patches at this stage, not the earlier report.
 Starting from the highest numbered, test patches with `sandbox apply` and
@@ -546,7 +546,8 @@ code, use the first hotspot. If the hotspot list wasn't built, because the repo 
 tests, build it now with the `git log` command in "Writing them". Either way, if the
 `git log` list is empty, or history is shallow, don't use the largest production
 files. Use instead the first file, by path, of the first-ranked common file type; else
-the largest non-generated source file; else the largest non-generated file.
+the largest non-generated source file; else the largest non-generated file. Largest
+means by line count, ties broken by path.
 
 For practices routing, give a realistic task that changes the practices hotspot, and
 ask which of the repo's practices apply to it. The key is the judgment rules from the
@@ -658,7 +659,8 @@ deliberate choice, so label it low confidence.
   the docs name a preferred one. Save the search commands, and reuse them on a rerun.
 - **Hotspots:** the hotspot list above, built as "Writing them" says if the repo has
   no tests, plus the 10 largest non-generated files.
-  Note files on both lists. With shallow history, this is "not measured".
+  Note files on both lists. With shallow history or an empty `git log` list, this is
+  "not measured".
 
 ## Generators (Consistency)
 
