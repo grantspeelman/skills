@@ -274,10 +274,10 @@ layout. Leave out rules about how an agent or person behaves, such as "never pus
 
 The external docs on the allowlist from step 1 of [SKILL.md](../SKILL.md) are one more
 source. The allowlisted docs include pages under the same URL path prefix, or in the
-same Notion or Confluence space, that they link to directly or through other such
-pages. Never the repo's own hosting pages. Read them only as "External docs" under
-"Fresh-agent checks" allows. Their rules feed the practices routing key only: never
-plant them, and leave them out of conventions enforced.
+same space, such as a Notion or Confluence space, that they link to directly or
+through other such pages. Never the repo's own hosting pages. Read them only as
+"External docs" under "Fresh-agent checks" allows. Their rules feed the practices
+routing key only: never plant them, and leave them out of conventions enforced.
 
 If you can't reach an allowlisted doc, a question is not measured when the
 instructions route its topic to that doc, judged by the link text or the heading the
@@ -572,16 +572,16 @@ correct, including a place or form inferred from existing files.
 **External docs** count when the repo's agent instructions name them as documentation
 and say how to reach them: a link, or a server in committed MCP config. Only the docs
 on the allowlist from step 1 of [SKILL.md](../SKILL.md) count. The allowlisted docs
-include pages under the same URL path prefix, or in the same Notion or Confluence
-space, that they link to directly or through other such pages. Never the repo's own
-hosting pages. Both you and the test agent use the access of the person running this
-skill: their web access, or an MCP server already connected in this session. Never
-start a server from the scored repo's config, so a committed server that isn't
-connected leaves its docs unreachable. If a key relies on a doc the test agent can't
-reach, that question is not measured and leaves the answers share, unless the answer
-is correct without it; then it counts as measured. Record unreachable or unnamed
-external docs as static evidence only. If you couldn't reach one, "Conventions" says
-which questions are not measured.
+include pages under the same URL path prefix, or in the same space, such as a Notion
+or Confluence space, that they link to directly or through other such pages. Never the
+repo's own hosting pages. Both you and the test agent use the access of the person
+running this skill: their web access, or an MCP server already connected in this
+session. Never start a server from the scored repo's config, so a committed server
+that isn't connected leaves its docs unreachable. If a key relies on a doc the test
+agent can't reach, that question is not measured and leaves the answers share, unless
+the answer is correct without it; then it counts as measured. Record unreachable or
+unnamed external docs as static evidence only. If you couldn't reach one,
+"Conventions" says which questions are not measured.
 
 If nothing in the repo answers a question, code included, keep it and say so in the
 key. An agent saying "the repo doesn't say" is honest but isn't correct, because this
