@@ -272,9 +272,10 @@ report. Only rules about the repo's content go in: code, tests, config, docs and
 layout. Leave out rules about how an agent or person behaves, such as "never push" or
 "commit only when asked".
 
-The external docs on the allowlist from step 1 of [SKILL.md](../SKILL.md) are one
-more source. The allowlisted docs include pages they link to within the same site or
-space, for you and the test agent alike. Read them only as "External docs" under
+The external docs on the allowlist from step 1 of [SKILL.md](../SKILL.md) are one more
+source. The allowlisted docs include pages under the same URL path prefix, or in the
+same Notion or Confluence space, that they link to directly or through other such
+pages. Never the repo's own hosting pages. Read them only as "External docs" under
 "Fresh-agent checks" allows. Their rules feed the practices routing key only: never
 plant them, and leave them out of conventions enforced.
 
@@ -571,14 +572,16 @@ correct, including a place or form inferred from existing files.
 **External docs** count when the repo's agent instructions name them as documentation
 and say how to reach them: a link, or a server in committed MCP config. Only the docs
 on the allowlist from step 1 of [SKILL.md](../SKILL.md) count. The allowlisted docs
-include pages they link to within the same site or space, for you and the test agent
-alike. Both you and the test agent use the access of the person running this skill:
-their web access, or an MCP server already connected in this session. Never start a
-server from the scored repo's config, so a committed server that isn't connected
-leaves its docs unreachable. If a key relies on a doc the test agent can't reach, that
-question is not measured and leaves the answers share, unless the answer is correct
-without it; then it counts as measured. Record unreachable or unnamed external docs as
-static evidence only.
+include pages under the same URL path prefix, or in the same Notion or Confluence
+space, that they link to directly or through other such pages. Never the repo's own
+hosting pages. Both you and the test agent use the access of the person running this
+skill: their web access, or an MCP server already connected in this session. Never
+start a server from the scored repo's config, so a committed server that isn't
+connected leaves its docs unreachable. If a key relies on a doc the test agent can't
+reach, that question is not measured and leaves the answers share, unless the answer
+is correct without it; then it counts as measured. Record unreachable or unnamed
+external docs as static evidence only. If you couldn't reach one, "Conventions" says
+which questions are not measured.
 
 If nothing in the repo answers a question, code included, keep it and say so in the
 key. An agent saying "the repo doesn't say" is honest but isn't correct, because this
@@ -598,7 +601,8 @@ agent only this:
 ```text
 Answer these questions about the repository at <sandbox>, using only what is in
 that repository, plus these external docs: <allowlist, or none>. You may follow links
-only within those docs' own site or space. Don't use the web otherwise. If you can't
+only under those docs' URL path or within their space, never to this repository's
+code, pull requests, issues or releases. Don't use the web otherwise. If you can't
 reach one of those docs, say which. Only read. Don't create, edit or comment on
 anything in the repository or in those docs; describe what you would do. Don't run
 the tests. Don't open files named
@@ -611,8 +615,8 @@ resource you read.
 ```
 
 Score correct answers against the key, and record how many files and lines each one
-opened. A URL outside the allowlisted docs' sites or spaces is disclosed the same way
-as a test that was read.
+opened. A URL outside those docs' URL paths or spaces is disclosed the same way as a
+test that was read.
 
 **Business rules from tests.** Give the agent only this:
 

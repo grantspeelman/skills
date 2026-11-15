@@ -371,14 +371,14 @@ from step 4. They are what reruns compare against:
   as points (A 20 to F 0), whether each category is measured, raw metrics, the merge
   state (required, not required or left out), push protection (on, off or left out),
   the test isolation result, setup findings, questions added, removed or replaced, the
-  practices routing and learning capture results, each external doc with whether it
-  could be reached, how (MCP server or web) and by whom (you or the test agent), the
-  date read, its last-edited time or revision where the source shows one, and the
-  questions an unreachable doc affected, who wrote the bugs, the result for each
-  patch, the common file types with their patterns, counts, ranking, generators and
-  example files, the generator smoke-test results, each feedback hook's event,
+  practices routing and learning capture results, who wrote the bugs, the result for
+  each patch, the common file types with their patterns, counts, ranking, generators
+  and example files, the generator smoke-test results, each feedback hook's event,
   command, result (met, failed or not measured), how it reported and time, and the
-  exact commands and searches used, so the next run can compare and repeat them.
+  exact commands and searches used, so the next run can compare and repeat them. For
+  each external doc, also save whether it could be reached, how (MCP server or web)
+  and by whom (you or the test agent), the date read, its last-edited time or revision
+  where the source shows one, and the questions it affected.
 
 Then run `sandbox finish --complete --report-to <folder>`, or leave out `--report-to`
 if the user chose the home folder only. This compares the scored repo first and
