@@ -1,6 +1,6 @@
 {
   "name": "gps-skills",
-  "version": "2.2.5",
+  "version": "2.2.6",
   "description": "Grant Petersen-Speelman's preferred minimum set of agent skills",
   "skills": "./skills/"
 }

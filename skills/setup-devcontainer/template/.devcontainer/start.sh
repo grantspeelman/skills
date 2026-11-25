@@ -74,14 +74,22 @@ CLAUDE_VOLUME="${SMOKE_CLAUDE_VOLUME:-__PROJECT__-claude-config}"
 
 # The tree id of .devcontainer/ as it is on disk; nothing when it's missing.
 devcontainer_tree() {
-    local dir tree
+    # ports.sh's temp files (compose.ports.yml.tmp-*) are never part of it.
+    local dir tree pathspecs=(.devcontainer ':(exclude).devcontainer/compose.ports.yml.tmp-*')
     # Nothing when it's gone or was swapped for a file or symlink.
     if [ ! -d "$PROJECT_ROOT/.devcontainer" ] || [ -L "$PROJECT_ROOT/.devcontainer" ]; then
         return 0
     fi
+    # compose.ports.yml is this host's own (see below), so it's left out,
+    # unless the commit checked out (HEAD, not the default branch) tracks it;
+    # then it's compared like the rest, and differs from a default branch
+    # that doesn't. ports.sh check guards it instead.
+    if ! git -C "$PROJECT_ROOT" cat-file -e HEAD:.devcontainer/compose.ports.yml 2>/dev/null; then
+        pathspecs+=(':(exclude).devcontainer/compose.ports.yml')
+    fi
     dir="$(mktemp -d)"
     # A throwaway index, so the real one (and its stat cache) plays no part.
-    tree="$(GIT_INDEX_FILE="$dir/index" git -C "$PROJECT_ROOT" add --force -- .devcontainer \
+    tree="$(GIT_INDEX_FILE="$dir/index" git -C "$PROJECT_ROOT" add --force -- "${pathspecs[@]}" \
         && GIT_INDEX_FILE="$dir/index" git -C "$PROJECT_ROOT" write-tree)" || { rm -rf "$dir"; return 1; }
     rm -rf "$dir"
     git -C "$PROJECT_ROOT" rev-parse --verify --quiet "$tree:.devcontainer" || true
@@ -201,6 +209,22 @@ elif [ "$mount_mode" = false ]; then
     fi
 fi
 
+# ── Ports: published on this host's 127.0.0.1 only ──────────────────────────
+# The container ports the project's dev servers listen on, space-separated.
+# They seed compose.ports.yml, which ports.sh writes once and start.sh then
+# leaves to you: it's gitignored, since host ports differ from machine to
+# machine. smoke-test.sh swaps in its own list.
+DEV_PORTS="${SMOKE_PORTS-__PROJECT_PORTS__}"
+PORTS_FILE="$SCRIPT_DIR/compose.ports.yml"
+if [ ! -e "$PORTS_FILE" ]; then
+    # shellcheck disable=SC2086 # an argument per port
+    if ! COMPOSE_PROJECT="$COMPOSE_PROJECT" "$SCRIPT_DIR/ports.sh" write "$PORTS_FILE" $DEV_PORTS; then
+        echo -e "${RED}Couldn't write $PORTS_FILE (above). The ports come from DEV_PORTS in start.sh.${NC}" >&2
+        exit 1
+    fi
+    echo -e "${GREEN}Wrote $PORTS_FILE; edit it to change which host ports the container gets.${NC}"
+fi
+
 COMPOSE=(docker compose -p "$COMPOSE_PROJECT"
     -f "$SCRIPT_DIR/docker-compose.yml")
 if [ "$mount_mode" = true ]; then
@@ -211,6 +235,22 @@ fi
 if [ "$docker_mode" = true ]; then
     COMPOSE+=(-f "$SCRIPT_DIR/compose.docker.yml")
 fi
+# The .devcontainer/ check leaves compose.ports.yml out, so it may change only
+# the app service's ports, and publish them on loopback only.
+ports_status=0
+"$SCRIPT_DIR/ports.sh" check "$PORTS_FILE" "${COMPOSE[@]}" || ports_status=$?
+case "$ports_status" in
+    0) ;;
+    2)
+        echo -e "${RED}Stopped: $PORTS_FILE may set only the app service's ports, on 127.0.0.1 or ::1. Fix it, or delete it to have it written again.${NC}" >&2
+        exit 1
+        ;;
+    *)
+        echo -e "${RED}Stopped: docker compose couldn't check $PORTS_FILE (above). Is Docker Compose 2.24 or later installed?${NC}" >&2
+        exit 1
+        ;;
+esac
+COMPOSE+=(-f "$PORTS_FILE")
 # Runs a command in the container. Its stdin is the caller's, so callers that
 # don't feed it anything pass </dev/null, or it eats input meant for a prompt.
 in_app() { "${COMPOSE[@]}" exec -T --user vscode "$SERVICE" "$@"; }
@@ -251,15 +291,20 @@ else
 fi
 
 # ── Build and start ──────────────────────────────────────────────────────────
+up_failed() {
+    echo -e "${RED}docker compose up failed (above). If a port is already in use, change its host port in $PORTS_FILE.${NC}" >&2
+    exit 1
+}
 if [ "$rebuild" = true ]; then
     echo -e "${GREEN}Rebuilding the image from scratch...${NC}"
     "${COMPOSE[@]}" build --pull --no-cache
-    "${COMPOSE[@]}" up --detach --force-recreate
+    "${COMPOSE[@]}" up --detach --force-recreate || up_failed
 else
     # --build is a cache hit unless the Dockerfile changed; `up` recreates the
     # container only when its image or config changed (e.g. toggling --docker or
-    # --mount-workspace). The clone's volume outlives the container either way.
-    "${COMPOSE[@]}" up --detach --build
+    # --mount-workspace, or editing compose.ports.yml). The clone's volume
+    # outlives the container either way.
+    "${COMPOSE[@]}" up --detach --build || up_failed
 fi
 
 # The entrypoint exits if dockerd fails, taking the container with it, so wait
@@ -559,6 +604,16 @@ done
 
 # The image's copy, not the clone's, so nothing in the clone can break it.
 in_app devcontainer-post-start </dev/null
+
+# What's published, read from the running container, so it shows your edits.
+# shellcheck disable=SC2016 # a Go template, not shell
+published="$(docker inspect "$("${COMPOSE[@]}" ps -q "$SERVICE")" --format \
+    '{{range $port, $binds := .NetworkSettings.Ports}}{{range $binds}}{{.HostIp}}:{{.HostPort}} -> {{$port}}{{"\n"}}{{end}}{{end}}' \
+    2>/dev/null | grep . || true)"
+if [ -n "$published" ]; then
+    echo -e "${GREEN}Ports (host -> container):${NC}"
+    while IFS= read -r line; do echo "  $line"; done <<<"$published"
+fi
 
 # %q so the line stays copy-pasteable from a checkout path containing spaces.
 printf -v stop_command '%q ' "${COMPOSE[@]}"

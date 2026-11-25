@@ -21,7 +21,8 @@ security posture as it is and add what this repo needs.
 
 - `.devcontainer/` with a `Dockerfile` (Ubuntu, Node for Claude Code, Python,
   `gh`, `gitleaks`, `lefthook`, Docker for opt-in nesting), compose files,
-  `start.sh`, `postStartCommand.sh` and `git-hooks/` (both baked into the image),
+  `start.sh` and its helper `ports.sh`, `postStartCommand.sh` and `git-hooks/`
+  (the last two baked into the image),
   `container-structure-test.yaml`, `smoke-test.sh` and a `README.md`. It doesn't include `ssh_known_hosts`;
   step 5 creates that file from the git host's published keys.
 - `lefthook.yml`, which runs gitleaks on staged changes before each commit.
@@ -48,7 +49,9 @@ itself, since that copy runs the check, so the README tells the user to review
 `git diff origin/HEAD <branch> -- .devcontainer` before checking out a branch
 the container pushed; `--rebuild` checks from the copy before the pull, so it
 has no such gap); the post-start setup runs from the image, so the clone
-can't change or break it (edits to `postStartCommand.sh` take a rebuild).
+can't change or break it (edits to `postStartCommand.sh` take a rebuild);
+ports are published on `127.0.0.1` only, from a per-checkout
+`compose.ports.yml` that VS Code doesn't use.
 
 ## Steps
 
@@ -84,9 +87,15 @@ guess:
   `build-essential`, `libvips` …) and CLIs (`terraform`, `kubectl`, `aws` …).
 - The git remote: if it isn't GitHub, the pinned host keys and the GitHub
   Actions workflow need adapting (see step 5).
+- Ports the dev servers listen on: port flags in `package.json` scripts or a
+  `Procfile`, `PORT=` in `.env.example` / `.env.sample`, server config, and
+  otherwise the framework's default (Rails 3000, Next 3000, Vite 5173, Django
+  8000, Phoenix 4000, Flask 5000 …). Only servers a developer opens from the
+  host; not backing services.
 
 Then tell the user what you found in a short list: runtimes with versions,
-package managers, system packages, services, extra CLIs, and the commands you'll
+package managers, system packages, services, extra CLIs, the ports you'll
+publish and where each came from, and the commands you'll
 use to prove it works. Ask about anything ambiguous (two Node versions, a
 service only some developers run) before building.
 
@@ -96,12 +105,15 @@ service only some developers run) before building.
 <this skill's dir>/scripts/render.sh "$(git rev-parse --show-toplevel)" <slug>
 ```
 
-It copies the template and fills in the slug, and the repo's `owner/name`
-from its `origin` remote (used for the host's `~/.config/<owner>/<name>/gh.env`;
-the slug if there's no remote). If it exits 3 it has listed the
-files that already exist and written nothing; go back to step 1's question for
-those. Use the files the user chose to merge into as references, and render
-the rest by hand from `template/`.
+It copies the template and fills in the slug, and the repo's `owner/name` from
+its `origin` remote (used for the host's `~/.config/<owner>/<name>/gh.env`; the
+slug if there's no remote). It also adds `.devcontainer/compose.ports.yml` and
+`.devcontainer/compose.ports.yml.tmp-*` to the repo's `.gitignore`, creating it
+if need be. If it exits 3 it has listed the files that already exist and written
+nothing; go back to step 1's question for those. Use the files the user chose to
+merge into as references, and render the rest by hand from `template/`; then add
+`.devcontainer/compose.ports.yml` and `.devcontainer/compose.ports.yml.tmp-*` to
+`.gitignore` yourself.
 
 The rendered files carry markers to replace (and remove once used):
 
@@ -111,6 +123,7 @@ The rendered files carry markers to replace (and remove once used):
 | `# __PROJECT_SERVICES__` | `docker-compose.yml` | Backing services and the app service's env/`depends_on` |
 | `# __PROJECT_SETUP__` | `postStartCommand.sh` | Idempotent dependency install |
 | `# __PROJECT_SMOKE_TESTS__` | `smoke-test.sh` | Checks that the project builds/tests inside |
+| `__PROJECT_PORTS__` | `start.sh` | Dev server ports, space-separated (`3000 5173`), or nothing |
 | `__PROJECT_TOOLCHAIN_DOCS__` | `README.md` | What was added and how to bump it |
 
 `.devcontainer/ssh_known_hosts` isn't rendered at all. You create it in step 5.
@@ -150,6 +163,15 @@ given `depends_on: {<svc>: {condition: service_healthy}}` plus the env vars the
 app reads (e.g. `DATABASE_URL`). Use obviously-local dev credentials
 (`postgres`/`postgres`), never real ones. Don't publish service ports to the
 host unless the user asks.
+
+**Ports (`__PROJECT_PORTS__`).** Replace the marker in `DEV_PORTS` with the
+container ports from step 2, space-separated, or with nothing when the repo
+serves nothing. On its first run `start.sh` writes the gitignored
+`.devcontainer/compose.ports.yml` from that list (through `ports.sh`),
+publishing each port on
+`127.0.0.1` (the same host port if it's free, otherwise the next free one), and
+never overwrites it; the user edits it from then on. Keep `127.0.0.1`, and keep
+the file out of `devcontainer.json`.
 
 **Dependencies (`# __PROJECT_SETUP__`).** Install project dependencies with the
 lockfile-respecting command (`npm ci`, `pnpm install --frozen-lockfile`,
@@ -243,7 +265,9 @@ them, what you verified and what you couldn't, and the first-run steps
 (`.devcontainer/start.sh`, which seeds the container's clone from the
 checkout and asks for a git `user.name` and `user.email` for it, then `claude`
 and log in once). Mention that `start.sh -- <command>` runs a command instead
-of a shell, e.g. `start.sh -- claude --resume`; that the container works in its
+of a shell, e.g. `start.sh -- claude --resume`; which ports it publishes and
+why, and that `.devcontainer/compose.ports.yml` (written on the first run) is
+theirs to edit; that the container works in its
 own clone, so its work reaches the checkout through GitHub and untracked files
 don't reach it; that `--mount-workspace` (and VS Code) mount the checkout
 instead, with the risks in the README; and that `docker compose ... down -v`
