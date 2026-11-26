@@ -36,6 +36,37 @@ container for this repo shares, so you log in once and it survives rebuilds.
 With `--mount-workspace` and in VS Code, the login isn't kept: you log in again
 whenever the container is recreated.
 
+## Ports
+
+On its first run `start.sh` writes `.devcontainer/compose.ports.yml`, which
+publishes the container ports listed in `DEV_PORTS` in `start.sh` (none, if
+the project serves nothing; the file then shows where to add one). Each is
+published on `127.0.0.1` only, so nothing else on your network can reach it.
+If a port is in use on this host when the file is written, by another program
+or another checkout's running dev container, it takes the next free one. A
+clash that turns up later makes `start.sh` stop, pointing at the file. Each
+start prints which host port goes to which container port.
+
+`127.0.0.1` keeps them local only with Docker Engine 28.0 or later on a Linux
+host: before that, hosts on your LAN can reach them
+([moby/moby#45610](https://github.com/moby/moby/issues/45610)). `start.sh`
+warns when it sees an older engine running on this Linux machine; upgrade, or
+block it with a firewall rule (the issue has examples). Docker Desktop, Colima,
+OrbStack and Rancher Desktop aren't affected the same way, since their engine
+runs in a VM, and the warning skips Podman, whose versions are numbered
+differently.
+
+The file is yours: git ignores it, `start.sh` never overwrites it, and the
+`.devcontainer/` check leaves it out (unless a commit adds it). Instead,
+`start.sh` refuses to run if the file changes anything but the app service's
+ports, or publishes one beyond `127.0.0.1` (or `::1`). It checks a private copy
+outside the checkout and starts the container from that copy, so a change made
+in between (from inside a `--mount-workspace` container, say) waits for the next
+check. Edit it to change or add ports, or delete it to have it written again.
+Edits take effect on the next `start.sh` run, which recreates the container; in
+the default mode the clone lives in a volume, so it survives that. VS Code
+doesn't use the file.
+
 ## What the container can reach
 
 | | |
@@ -44,7 +75,7 @@ whenever the container is recreated.
 | **GitHub** | Only `GH_TOKEN=...` from `~/.config/__PROJECT_REPO__/gh.env` on the host, outside the checkout, for both `git push` and `gh`. A token exported in your shell isn't passed in. See [GitHub access](#github-access) for the permissions it should have. The `env_file` entry needs Docker Compose 2.24 or later. |
 | **SSH** | None from `start.sh`: no ssh-agent is forwarded. VS Code forwards your host agent on its own (see below). |
 | **Claude** | Its own config, with `permissions.defaultMode = bypassPermissions`. Your host Claude settings are untouched. |
-| **Network** | Unrestricted outbound. There's no egress firewall. |
+| **Network** | Unrestricted outbound. There's no egress firewall. Inbound, only the [ports](#ports) in `compose.ports.yml`, on `127.0.0.1` or `::1`. |
 
 There's no `sudo` in the container, so Claude can't change the image's git
 setup (hooks, credential helper) from inside. Anything the project needs
@@ -94,7 +125,10 @@ itself: the check runs inside the checked-out copy, which a pushed branch can
 change to leave the check out. Hence the review before you check the branch
 out. `--rebuild` doesn't have this gap, because the copy from before the pull
 does its checking. The check doesn't cover files outside `.devcontainer/`, and
-it also asks while you have your own uncommitted changes there.
+it also asks while you have your own uncommitted changes there. It leaves out
+`compose.ports.yml`, which is yours (see [Ports](#ports)); `start.sh` instead
+refuses that file if it changes more than the app service's loopback ports,
+checking a private copy that it then starts the container from.
 
 What this costs:
 
@@ -219,13 +253,13 @@ SHA-256), update its test in the same commit.
 it end to end: the seeded clone with nothing from the host mounted, seeding only
 once, seeding from a detached `HEAD`, leaving stashes out, stopping on a shallow
 checkout, a checkout it can't bundle or a clone whose config git can't read, the
-`.devcontainer/` check, `--reset` (listing work kept only in a reflog, stopping
-without a terminal, refusing a partial clone), `--mount-workspace` as a plain
-mount with no Claude config volume, no SSH agent and git over HTTPS with the
-token, no `sudo`, Claude settings, the project toolchain, the commit hook,
-nested Docker, and switching back to unprivileged. It cleans up after itself,
-using its own compose project and a throwaway Claude config volume so your login
-and clone are never touched.
+`.devcontainer/` check, refusing and writing `compose.ports.yml`, `--reset`
+(listing work kept only in a reflog, stopping without a terminal, refusing a
+partial clone), `--mount-workspace` as a plain mount with no Claude config
+volume, no SSH agent and git over HTTPS with the token, no `sudo`, Claude
+settings, the project toolchain, the commit hook, nested Docker, and switching
+back to unprivileged. It cleans up after itself, using its own compose project
+and a throwaway Claude config volume so your login and clone are never touched.
 
 CI (`.github/workflows/devcontainer-ci.yml`) runs both, plus a full-history
 secret scan, on every push to `main` and every PR.

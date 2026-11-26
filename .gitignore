@@ -1,3 +1,8 @@
 # In the dev container ~/.claude/skills links to /workspace/skills, so Claude Code
 # writes the user's account-synced skills here. Keep them out of this public repo.
 skills/synced/
+
+# The dev container's host ports, which start.sh writes once per checkout and
+# you edit; they differ from machine to machine.
+.devcontainer/compose.ports.yml
+.devcontainer/compose.ports.yml.tmp-*

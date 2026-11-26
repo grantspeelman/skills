@@ -7,6 +7,9 @@
 # lists them and exits 3 without writing anything. Leaves the __PROJECT_*__
 # tailoring markers in place for the skill to fill in. It does not create
 # .devcontainer/ssh_known_hosts: the skill fetches and checks those keys itself.
+# It adds .devcontainer/compose.ports.yml (start.sh writes it per checkout)
+# and its temp files, compose.ports.yml.tmp-*, to the target's .gitignore,
+# creating the file if need be.
 set -euo pipefail
 
 if [ $# -ne 2 ]; then
@@ -48,4 +51,15 @@ for f in "${files[@]}"; do
     [ -x "$TEMPLATE/$f" ] && chmod +x "$target/$f"
     echo "$f"
 done
-echo "Still to do: create .devcontainer/ssh_known_hosts (the Dockerfile copies it)." >&2
+
+ignore="$target/.gitignore"
+missing=()
+for entry in .devcontainer/compose.ports.yml ".devcontainer/compose.ports.yml.tmp-*"; do
+    grep -qxF "$entry" "$ignore" 2>/dev/null || missing+=("$entry")
+done
+if [ ${#missing[@]} -gt 0 ]; then
+    # Onto a line of its own, even when the file doesn't end in a newline.
+    if [ -s "$ignore" ] && [ -n "$(tail -c 1 "$ignore")" ]; then echo >> "$ignore"; fi
+    printf '%s\n' "# The dev container's host ports; start.sh writes them per checkout." "${missing[@]}" >> "$ignore"
+    echo ".gitignore"
+fi

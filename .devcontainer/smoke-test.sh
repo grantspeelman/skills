@@ -17,6 +17,9 @@
 #   • seeding from a detached HEAD, and stopping on a shallow checkout or one
 #     that can't be bundled
 #   • the .devcontainer/ check every start runs
+#   • compose.ports.yml: refused when it sets more than ports or publishes
+#     beyond loopback, written on the first run with a 127.0.0.1 binding, never
+#     overwritten, the mapping shown
 # Runs in CI (.github/workflows/devcontainer-ci.yml) and locally alike. It uses
 # its own compose project and a throwaway Claude config volume (never your real
 # login's), and removes them on exit.
@@ -27,6 +30,10 @@ REPO_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 # start.sh reads both, so its containers and volumes are this run's own.
 export SMOKE_COMPOSE_PROJECT="skills-smoke-$$"
 export SMOKE_CLAUDE_VOLUME="$SMOKE_COMPOSE_PROJECT-claude-config"
+# Instead of the project's own ports, one nothing listens on. start.sh gives it
+# a free host port, so a running dev container's ports are never in the way.
+SMOKE_PORT=47613
+export SMOKE_PORTS="$SMOKE_PORT"
 export USER_UID="$(id -u)" USER_GID="$(id -g)"
 
 WORK="$(mktemp -d)"
@@ -96,9 +103,32 @@ grep -q 'differs from origin/main' "$WORK/check.log" || { cat "$WORK/check.log" 
 git -C "$CHECKOUT" checkout -q -- .devcontainer/compose.mount.yml
 pass "start.sh stops on a .devcontainer/ that differs from the default branch"
 
+echo "# a compose.ports.yml that sets more than loopback ports"
+PORTS_FILE="$CHECKOUT/.devcontainer/compose.ports.yml"
+# Both stop before anything starts.
+refused_ports() {
+    printf 'services:\n  app:\n%s\n' "$1" > "$PORTS_FILE"
+    if "$START" -- true </dev/null >"$WORK/ports.log" 2>&1; then
+        cat "$WORK/ports.log" >&2; fail "start.sh ran with a compose.ports.yml that $3"
+    fi
+    grep -qF "$2" "$WORK/ports.log" || { cat "$WORK/ports.log" >&2; fail "start.sh did not say the file $3"; }
+    rm "$PORTS_FILE"
+    pass "start.sh refuses a compose.ports.yml that $3"
+}
+refused_ports '    privileged: true' "changes more than the app service's ports" "sets more than ports"
+refused_ports '    ports: ["3000:3000"]' "publishes a port on more than 127.0.0.1" "publishes beyond loopback"
+
 echo "# default mode, privileged, with nested Docker"
-"$START" --docker -- true </dev/null
+"$START" --docker -- true </dev/null | tee "$WORK/first.log"
 pass "start.sh --docker started the container"
+
+echo "# compose.ports.yml"
+grep -qE "^ +- \"127\.0\.0\.1:[0-9]+:$SMOKE_PORT\"\$" "$PORTS_FILE" \
+    || { cat "$PORTS_FILE" >&2; fail "compose.ports.yml doesn't publish $SMOKE_PORT on 127.0.0.1"; }
+published="$(docker port "$("${BASE[@]}" ps -q app)" "$SMOKE_PORT/tcp")"
+[[ "$published" =~ ^127\.0\.0\.1:[0-9]+$ ]] || fail "$SMOKE_PORT is published as '$published', not on 127.0.0.1 only"
+grep -qF "$published -> $SMOKE_PORT/tcp" "$WORK/first.log" || fail "start.sh didn't show the port mapping"
+pass "compose.ports.yml written, $SMOKE_PORT published on $published"
 
 in_container 'docker info' >/dev/null || fail "dockerd is not running"
 pass "dockerd started"
@@ -171,6 +201,7 @@ pass "git config and commits work in the clone, apart from the checkout"
 container_head="$(in_container 'git -C /workspace rev-parse HEAD')"
 
 echo "# back to unprivileged"
+echo "# smoke: kept" >> "$PORTS_FILE"
 # The post-start setup runs from the image, so the clone can't break it.
 in_container 'rm /workspace/.devcontainer/postStartCommand.sh'
 "$START" -- true </dev/null
@@ -184,6 +215,8 @@ pass "no sudo"
 [ "$(in_container 'git -C /workspace rev-parse HEAD')" = "$container_head" ] || fail "the clone was seeded again"
 pass "the clone survives the recreate and isn't seeded again"
 pass "start.sh runs the image's post-start setup, not the clone's"
+grep -qx "# smoke: kept" "$PORTS_FILE" || fail "start.sh overwrote compose.ports.yml"
+pass "start.sh leaves an existing compose.ports.yml alone"
 in_container 'git -C /workspace checkout -q -- .devcontainer/postStartCommand.sh'
 
 echo "# a clone git can't read"

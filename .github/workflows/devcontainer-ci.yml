@@ -24,13 +24,33 @@ jobs:
 
       - name: Validate compose files
         run: |
+          ports_dir="$(mktemp -d)"
           for workspace in clone mount; do
-            docker compose \
-              -f .devcontainer/docker-compose.yml \
-              -f ".devcontainer/compose.$workspace.yml" \
-              -f .devcontainer/compose.docker.yml \
-              config --quiet
+            compose=(docker compose
+              -f .devcontainer/docker-compose.yml
+              -f ".devcontainer/compose.$workspace.yml"
+              -f .devcontainer/compose.docker.yml)
+            "${compose[@]}" config --quiet
+            # compose.ports.yml as start.sh has ports.sh write it, with no
+            # ports and with one, checked the way start.sh checks it.
+            for ports in "" 3000; do
+              file="$ports_dir/$workspace${ports:+-$ports}.yml"
+              .devcontainer/ports.sh write "$file" $ports
+              .devcontainer/ports.sh check "$file" "${compose[@]}"
+            done
+            # A port on every interface is refused (exit 2), also when a
+            # value spells out a loopback host_ip.
+            printf 'services:\n  app:\n    ports: ["3000:3000"]\n' > "$ports_dir/open.yml"
+            printf '%s\n' 'services:' '  app:' '    ports:' '      - target: 3000' \
+              '        published: "3000"' '        name: |' '          host_ip: 127.0.0.1' \
+              > "$ports_dir/open-name.yml"
+            for open in open open-name; do
+              status=0
+              .devcontainer/ports.sh check "$ports_dir/$open.yml" "${compose[@]}" || status=$?
+              [ "$status" = 2 ]
+            done
           done
+          grep -qx '      - "127.0.0.1:[0-9]*:3000"' "$ports_dir/clone-3000.yml"
 
       - name: Build image
         run: docker build -f .devcontainer/Dockerfile -t "$IMAGE" .
@@ -55,10 +75,11 @@ jobs:
             git --redact --no-banner --verbose .
 
   # Runs start.sh from a throwaway checkout and checks it behaves: the seeded
-  # clone, --reset, --mount-workspace, no SSH agent, git over HTTPS with
-  # GH_TOKEN, Claude settings, skills link, commit hook, nested Docker and
-  # dropping back to unprivileged. The runner's UID (1001) also exercises the
-  # image's UID remapping, which the default 1000 build above does not.
+  # clone, --reset, --mount-workspace, compose.ports.yml, no SSH agent, git
+  # over HTTPS with GH_TOKEN, Claude settings, skills link, commit hook,
+  # nested Docker and dropping back to unprivileged. The runner's UID (1001)
+  # also exercises the image's UID remapping, which the default 1000 build
+  # above does not.
   smoke:
     runs-on: ubuntu-latest
     steps:

@@ -74,14 +74,22 @@ CLAUDE_VOLUME="${SMOKE_CLAUDE_VOLUME:-grantspeelman-skills-claude-config}"
 
 # The tree id of .devcontainer/ as it is on disk; nothing when it's missing.
 devcontainer_tree() {
-    local dir tree
+    # ports.sh's temp files (compose.ports.yml.tmp-*) are never part of it.
+    local dir tree pathspecs=(.devcontainer ':(exclude).devcontainer/compose.ports.yml.tmp-*')
     # Nothing when it's gone or was swapped for a file or symlink.
     if [ ! -d "$PROJECT_ROOT/.devcontainer" ] || [ -L "$PROJECT_ROOT/.devcontainer" ]; then
         return 0
     fi
+    # compose.ports.yml is this host's own (see below), so it's left out,
+    # unless the commit checked out (HEAD, not the default branch) tracks it;
+    # then it's compared like the rest, and differs from a default branch
+    # that doesn't. ports.sh check guards it instead.
+    if ! git -C "$PROJECT_ROOT" cat-file -e HEAD:.devcontainer/compose.ports.yml 2>/dev/null; then
+        pathspecs+=(':(exclude).devcontainer/compose.ports.yml')
+    fi
     dir="$(mktemp -d)"
     # A throwaway index, so the real one (and its stat cache) plays no part.
-    tree="$(GIT_INDEX_FILE="$dir/index" git -C "$PROJECT_ROOT" add --force -- .devcontainer \
+    tree="$(GIT_INDEX_FILE="$dir/index" git -C "$PROJECT_ROOT" add --force -- "${pathspecs[@]}" \
         && GIT_INDEX_FILE="$dir/index" git -C "$PROJECT_ROOT" write-tree)" || { rm -rf "$dir"; return 1; }
     rm -rf "$dir"
     git -C "$PROJECT_ROOT" rev-parse --verify --quiet "$tree:.devcontainer" || true
@@ -201,6 +209,33 @@ elif [ "$mount_mode" = false ]; then
     fi
 fi
 
+# The image is built for these, and the ports check below reads the same
+# config compose builds from.
+USER_UID="$(id -u)"
+USER_GID="$(id -g)"
+if [ "$USER_UID" -eq 0 ] || [ "$USER_GID" -eq 0 ]; then
+    echo -e "${YELLOW}Running as root: building the image for UID/GID 1000:1000 instead, so the image's root user is not remapped.${NC}"
+    USER_UID=1000
+    USER_GID=1000
+fi
+export USER_UID USER_GID
+
+# ── Ports: published on this host's 127.0.0.1 only ──────────────────────────
+# The container ports the project's dev servers listen on, space-separated.
+# They seed compose.ports.yml, which ports.sh writes once and start.sh then
+# leaves to you: it's gitignored, since host ports differ from machine to
+# machine. smoke-test.sh swaps in its own list.
+DEV_PORTS="${SMOKE_PORTS-}"
+PORTS_FILE="$SCRIPT_DIR/compose.ports.yml"
+if [ ! -e "$PORTS_FILE" ]; then
+    # shellcheck disable=SC2086 # an argument per port
+    if ! COMPOSE_PROJECT="$COMPOSE_PROJECT" "$SCRIPT_DIR/ports.sh" write "$PORTS_FILE" $DEV_PORTS; then
+        echo -e "${RED}Couldn't write $PORTS_FILE (above). The ports come from DEV_PORTS in start.sh.${NC}" >&2
+        exit 1
+    fi
+    echo -e "${GREEN}Wrote $PORTS_FILE; edit it to change which host ports the container gets.${NC}"
+fi
+
 COMPOSE=(docker compose -p "$COMPOSE_PROJECT"
     -f "$SCRIPT_DIR/docker-compose.yml")
 if [ "$mount_mode" = true ]; then
@@ -211,18 +246,49 @@ fi
 if [ "$docker_mode" = true ]; then
     COMPOSE+=(-f "$SCRIPT_DIR/compose.docker.yml")
 fi
+# The .devcontainer/ check leaves compose.ports.yml out, so it may change only
+# the app service's ports, and publish them on loopback only. What's checked
+# is a private copy, outside the checkout, and build and up use that same
+# copy: with --mount-workspace a running container can rewrite the real file
+# at any moment. The other compose commands (exec, ps, logs, down) don't
+# depend on ports, so they leave it out, and the copy goes once the container
+# is up. (A later trap for the seed bundle replaces this one; by then the copy
+# is gone.) The container's com.docker.compose.project.config_files label
+# still names the copy, so `docker compose ls` and Docker Desktop list a
+# missing file; that's harmless, as start.sh never reads the label.
+# Only a regular file, not a symlink, and at most 1 MiB is read: a container
+# could point it at /dev/zero (filling $TMPDIR) or make it a FIFO (blocking).
+ports_copy="$(mktemp)"
+trap 'rm -f "$ports_copy"' EXIT
+if [ ! -f "$PORTS_FILE" ] || [ -L "$PORTS_FILE" ]; then
+    echo -e "${RED}Stopped: $PORTS_FILE isn't a regular file (a symlink, say). Delete it to have it written again.${NC}" >&2
+    exit 1
+fi
+if ! head -c 1048577 "$PORTS_FILE" > "$ports_copy"; then
+    echo -e "${RED}Stopped: couldn't read $PORTS_FILE (above). Delete it to have it written again.${NC}" >&2
+    exit 1
+fi
+if [ "$(wc -c < "$ports_copy")" -gt 1048576 ]; then
+    echo -e "${RED}Stopped: $PORTS_FILE is over 1 MiB, far more than ports need. Delete it to have it written again.${NC}" >&2
+    exit 1
+fi
+ports_status=0
+PORTS_FILE_NAME="$PORTS_FILE" "$SCRIPT_DIR/ports.sh" check "$ports_copy" "${COMPOSE[@]}" || ports_status=$?
+case "$ports_status" in
+    0) ;;
+    2)
+        echo -e "${RED}Stopped: $PORTS_FILE may set only the app service's ports, on 127.0.0.1 or ::1. Fix it, or delete it to have it written again.${NC}" >&2
+        exit 1
+        ;;
+    *)
+        echo -e "${RED}Stopped: docker compose couldn't check $PORTS_FILE. Run the command above to see compose's error; this needs Docker Compose 2.24 or later.${NC}" >&2
+        exit 1
+        ;;
+esac
+COMPOSE_UP=("${COMPOSE[@]}" -f "$ports_copy")
 # Runs a command in the container. Its stdin is the caller's, so callers that
 # don't feed it anything pass </dev/null, or it eats input meant for a prompt.
 in_app() { "${COMPOSE[@]}" exec -T --user vscode "$SERVICE" "$@"; }
-
-USER_UID="$(id -u)"
-USER_GID="$(id -g)"
-if [ "$USER_UID" -eq 0 ] || [ "$USER_GID" -eq 0 ]; then
-    echo -e "${YELLOW}Running as root: building the image for UID/GID 1000:1000 instead, so the image's root user is not remapped.${NC}"
-    USER_UID=1000
-    USER_GID=1000
-fi
-export USER_UID USER_GID
 
 # ── GitHub: the token is the container's only git credential ────────────────
 # No ssh-agent is forwarded: it would sign as your own key, which reaches every
@@ -251,16 +317,22 @@ else
 fi
 
 # ── Build and start ──────────────────────────────────────────────────────────
+up_failed() {
+    echo -e "${RED}docker compose up failed (above). If a port is already in use, change its host port in $PORTS_FILE.${NC}" >&2
+    exit 1
+}
 if [ "$rebuild" = true ]; then
     echo -e "${GREEN}Rebuilding the image from scratch...${NC}"
-    "${COMPOSE[@]}" build --pull --no-cache
-    "${COMPOSE[@]}" up --detach --force-recreate
+    "${COMPOSE_UP[@]}" build --pull --no-cache
+    "${COMPOSE_UP[@]}" up --detach --force-recreate || up_failed
 else
     # --build is a cache hit unless the Dockerfile changed; `up` recreates the
     # container only when its image or config changed (e.g. toggling --docker or
-    # --mount-workspace). The clone's volume outlives the container either way.
-    "${COMPOSE[@]}" up --detach --build
+    # --mount-workspace, or editing compose.ports.yml). The clone's volume
+    # outlives the container either way.
+    "${COMPOSE_UP[@]}" up --detach --build || up_failed
 fi
+rm -f "$ports_copy"
 
 # The entrypoint exits if dockerd fails, taking the container with it, so wait
 # before running anything else in there.
@@ -559,6 +631,29 @@ done
 
 # The image's copy, not the clone's, so nothing in the clone can break it.
 in_app devcontainer-post-start </dev/null
+
+# What's published, read from the running container, so it shows your edits.
+# shellcheck disable=SC2016 # a Go template, not shell
+published="$(docker inspect "$("${COMPOSE[@]}" ps -q "$SERVICE")" --format \
+    '{{range $port, $binds := .NetworkSettings.Ports}}{{range $binds}}{{.HostIp}}:{{.HostPort}} -> {{$port}}{{"\n"}}{{end}}{{end}}' \
+    2>/dev/null | grep . || true)"
+if [ -n "$published" ]; then
+    echo -e "${GREEN}Ports (host -> container):${NC}"
+    while IFS= read -r line; do echo "  $line"; done <<<"$published"
+    # Before 28.0, Docker Engine on Linux let hosts on the same LAN reach ports
+    # published on 127.0.0.1 (moby/moby#45610). Only an engine running on this
+    # Linux host itself: Docker Desktop, Colima, OrbStack and Rancher Desktop
+    # run theirs in a VM, and Podman's version numbers are its own.
+    engine="$(docker version --format '{{.Server.Version}}' 2>/dev/null || true)"
+    engine_major="${engine%%.*}"
+    engine_name="$(docker version --format '{{.Server.Platform.Name}}' 2>/dev/null || true)"
+    if [ "$(uname -s)" = Linux ] && [[ "$engine_major" =~ ^[0-9]+$ ]] && [ "$engine_major" -lt 28 ] \
+        && [ "$(docker version --format '{{.Server.Os}}' 2>/dev/null || true)" = linux ] \
+        && [[ "$engine_name" != *[Pp]odman* && "$engine_name" != *"Docker Desktop"* ]] \
+        && [[ "$(docker info --format '{{.OperatingSystem}}' 2>/dev/null || true)" != *"Docker Desktop"* ]]; then
+        echo -e "${YELLOW}Docker Engine $engine: before 28.0, hosts on your LAN can reach ports published on 127.0.0.1 (https://github.com/moby/moby/issues/45610). Upgrade Docker, or block it with a firewall rule (the issue has examples).${NC}"
+    fi
+fi
 
 # %q so the line stays copy-pasteable from a checkout path containing spaces.
 printf -v stop_command '%q ' "${COMPOSE[@]}"
