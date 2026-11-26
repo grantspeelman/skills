@@ -247,9 +247,33 @@ if [ "$docker_mode" = true ]; then
     COMPOSE+=(-f "$SCRIPT_DIR/compose.docker.yml")
 fi
 # The .devcontainer/ check leaves compose.ports.yml out, so it may change only
-# the app service's ports, and publish them on loopback only.
+# the app service's ports, and publish them on loopback only. What's checked
+# is a private copy, outside the checkout, and build and up use that same
+# copy: with --mount-workspace a running container can rewrite the real file
+# at any moment. The other compose commands (exec, ps, logs, down) don't
+# depend on ports, so they leave it out, and the copy goes once the container
+# is up. (A later trap for the seed bundle replaces this one; by then the copy
+# is gone.) The container's com.docker.compose.project.config_files label
+# still names the copy, so `docker compose ls` and Docker Desktop list a
+# missing file; that's harmless, as start.sh never reads the label.
+# Only a regular file, not a symlink, and at most 1 MiB is read: a container
+# could point it at /dev/zero (filling $TMPDIR) or make it a FIFO (blocking).
+ports_copy="$(mktemp)"
+trap 'rm -f "$ports_copy"' EXIT
+if [ ! -f "$PORTS_FILE" ] || [ -L "$PORTS_FILE" ]; then
+    echo -e "${RED}Stopped: $PORTS_FILE isn't a regular file (a symlink, say). Delete it to have it written again.${NC}" >&2
+    exit 1
+fi
+if ! head -c 1048577 "$PORTS_FILE" > "$ports_copy"; then
+    echo -e "${RED}Stopped: couldn't read $PORTS_FILE (above). Delete it to have it written again.${NC}" >&2
+    exit 1
+fi
+if [ "$(wc -c < "$ports_copy")" -gt 1048576 ]; then
+    echo -e "${RED}Stopped: $PORTS_FILE is over 1 MiB, far more than ports need. Delete it to have it written again.${NC}" >&2
+    exit 1
+fi
 ports_status=0
-"$SCRIPT_DIR/ports.sh" check "$PORTS_FILE" "${COMPOSE[@]}" || ports_status=$?
+PORTS_FILE_NAME="$PORTS_FILE" "$SCRIPT_DIR/ports.sh" check "$ports_copy" "${COMPOSE[@]}" || ports_status=$?
 case "$ports_status" in
     0) ;;
     2)
@@ -261,7 +285,7 @@ case "$ports_status" in
         exit 1
         ;;
 esac
-COMPOSE+=(-f "$PORTS_FILE")
+COMPOSE_UP=("${COMPOSE[@]}" -f "$ports_copy")
 # Runs a command in the container. Its stdin is the caller's, so callers that
 # don't feed it anything pass </dev/null, or it eats input meant for a prompt.
 in_app() { "${COMPOSE[@]}" exec -T --user vscode "$SERVICE" "$@"; }
@@ -299,15 +323,16 @@ up_failed() {
 }
 if [ "$rebuild" = true ]; then
     echo -e "${GREEN}Rebuilding the image from scratch...${NC}"
-    "${COMPOSE[@]}" build --pull --no-cache
-    "${COMPOSE[@]}" up --detach --force-recreate || up_failed
+    "${COMPOSE_UP[@]}" build --pull --no-cache
+    "${COMPOSE_UP[@]}" up --detach --force-recreate || up_failed
 else
     # --build is a cache hit unless the Dockerfile changed; `up` recreates the
     # container only when its image or config changed (e.g. toggling --docker or
     # --mount-workspace, or editing compose.ports.yml). The clone's volume
     # outlives the container either way.
-    "${COMPOSE[@]}" up --detach --build || up_failed
+    "${COMPOSE_UP[@]}" up --detach --build || up_failed
 fi
+rm -f "$ports_copy"
 
 # The entrypoint exits if dockerd fails, taking the container with it, so wait
 # before running anything else in there.

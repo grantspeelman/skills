@@ -59,10 +59,13 @@ differently.
 The file is yours: git ignores it, `start.sh` never overwrites it, and the
 `.devcontainer/` check leaves it out (unless a commit adds it). Instead,
 `start.sh` refuses to run if the file changes anything but the app service's
-ports, or publishes one beyond `127.0.0.1` (or `::1`). Edit it to change or add
-ports, or delete it to have it written again. Edits take effect on the next
-`start.sh` run, which recreates the container; in the default mode the clone
-lives in a volume, so it survives that. VS Code doesn't use the file.
+ports, or publishes one beyond `127.0.0.1` (or `::1`). It checks a private copy
+outside the checkout and starts the container from that copy, so a change made
+in between (from inside a `--mount-workspace` container, say) waits for the next
+check. Edit it to change or add ports, or delete it to have it written again.
+Edits take effect on the next `start.sh` run, which recreates the container; in
+the default mode the clone lives in a volume, so it survives that. VS Code
+doesn't use the file.
 
 ## What the container can reach
 
@@ -124,7 +127,8 @@ out. `--rebuild` doesn't have this gap, because the copy from before the pull
 does its checking. The check doesn't cover files outside `.devcontainer/`, and
 it also asks while you have your own uncommitted changes there. It leaves out
 `compose.ports.yml`, which is yours (see [Ports](#ports)); `start.sh` instead
-refuses that file if it changes more than the app service's loopback ports.
+refuses that file if it changes more than the app service's loopback ports,
+checking a private copy that it then starts the container from.
 
 What this costs:
 

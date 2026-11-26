@@ -5,7 +5,8 @@
 #   ports.sh check FILE COMPOSE...   exit 2 unless FILE changes nothing but the
 #                                    app service's ports, all on loopback; 1 if
 #                                    compose fails. COMPOSE is the docker
-#                                    compose command without FILE
+#                                    compose command without FILE; messages
+#                                    name $PORTS_FILE_NAME if set
 # start.sh runs both, and CI runs them to validate what `write` produces.
 # COMPOSE_PROJECT, when set, is the caller's own compose project: ports its
 # running container publishes count as free, so deleting the file and running
@@ -199,10 +200,13 @@ changed_paths() {
 # service's ports, and those must be on loopback. Comparing compose's own
 # result catches anything the file could do (other keys, services, top-level
 # sections, !reset tags, anchors), without parsing YAML here.
-# Exits 2 when the file does more than that, 1 when compose fails.
+# Exits 2 when the file does more than that, 1 when compose fails. Messages
+# name PORTS_FILE_NAME when it's set: start.sh checks a private copy, but the
+# user edits the real file.
 check() {
-    local file="$1" with without command
+    local file="$1" with without command name
     shift
+    name="${PORTS_FILE_NAME:-$file}"
     # Compose's own errors aren't shown: they can quote values, tokens
     # included. The message names the command that shows them.
     if ! without="$("$@" config 2>/dev/null)"; then
@@ -212,9 +216,9 @@ check() {
         exit 1
     fi
     if ! with="$("$@" -f "$file" config 2>/dev/null)"; then
-        printf -v command '%q ' "$@" -f "$file" config
+        printf -v command '%q ' "$@" -f "$name" config
         command="${command% }"
-        echo "docker compose couldn't read $file on top of the other compose files. Its error isn't shown, as it can quote values such as tokens; to see it, run: $command" >&2
+        echo "docker compose couldn't read $name on top of the other compose files. Its error isn't shown, as it can quote values such as tokens; to see it, run: $command" >&2
         exit 1
     fi
     if [ "$(without_app_ports <<<"$with")" != "$(without_app_ports <<<"$without")" ]; then
@@ -223,11 +227,11 @@ check() {
         # not be the user's own can't rewrite what's shown.
         changed_paths <(without_app_ports <<<"$without") <(without_app_ports <<<"$with") \
             | sed 's/^/  /' | cat -v >&2 || true
-        echo "$file changes more than the app service's ports: it changes what's listed above (values aren't shown, as they can hold secrets)." >&2
+        echo "$name changes more than the app service's ports: it changes what's listed above (values aren't shown, as they can hold secrets)." >&2
         exit 2
     fi
     if ! app_ports_on_loopback <<<"$with"; then
-        echo "$file publishes a port on more than 127.0.0.1 or ::1, so others on your network could reach it." >&2
+        echo "$name publishes a port on more than 127.0.0.1 or ::1, so others on your network could reach it." >&2
         exit 2
     fi
 }

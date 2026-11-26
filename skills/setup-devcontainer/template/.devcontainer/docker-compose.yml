@@ -5,8 +5,9 @@
 #   compose.mount.yml  start.sh --mount-workspace and VS Code: the host checkout
 # No ssh-agent is forwarded: git reaches GitHub over HTTPS with GH_TOKEN. With
 # --docker, start.sh layers compose.docker.yml (privileged nested Docker) on top.
-# start.sh always layers compose.ports.yml last: the ports it publishes on this
-# host's 127.0.0.1, a gitignored file it writes on its first run (see README).
+# For build and up, start.sh layers a checked private copy of compose.ports.yml
+# last: the ports it publishes on this host's 127.0.0.1, from a gitignored file
+# it writes on its first run (see README).
 services:
   app:
     build:
