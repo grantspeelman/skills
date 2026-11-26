@@ -46,7 +46,8 @@ port_free() {
 write() {
     local file="$1" port ports="" yaml="" host_port
     shift
-    if [ -e "$file" ]; then return 0; fi
+    # A symlink counts too, even a dangling one, so check reports on it.
+    if [ -e "$file" ] || [ -L "$file" ]; then return 0; fi
     for port in "$@"; do
         if ! [[ "$port" =~ ^0*[0-9]{1,5}$ ]] || [ "$((10#$port))" -lt 1 ] || [ "$((10#$port))" -gt 65535 ]; then
             echo "Not a port: $port" >&2
@@ -73,15 +74,19 @@ write() {
             while [ "$host_port" -le 65535 ] && ! port_free "$host_port"; do
                 host_port=$((host_port + 1))
             done
-            if [ "$host_port" -gt 65535 ]; then host_port="$port"; fi
+            if [ "$host_port" -gt 65535 ]; then
+                echo "Port $port is taken on this host, and so is every one above it; nothing was written." >&2
+                exit 1
+            fi
             yaml+="      # $port was taken on this host when start.sh wrote this."$'\n'
         fi
         picked+=" $host_port"
         yaml+="      - \"127.0.0.1:$host_port:$port\""$'\n'
     done
-    # Written beside it and renamed into place, so an interrupted run never
-    # leaves a half-written file. A leftover from a kill is harmless: git
-    # ignores compose.ports.yml.tmp-* and the .devcontainer/ check skips it.
+    # Written beside it, then linked into place: ln fails rather than replace
+    # a file another start.sh wrote meanwhile, and the file never shows up
+    # half-written. A leftover from a kill is harmless: git ignores
+    # compose.ports.yml.tmp-* and the .devcontainer/ check skips it.
     tmp="$(mktemp "$file.tmp-XXXXXX")"  # global: the EXIT trap outlives this function
     trap 'rm -f "$tmp"' EXIT
     {
@@ -104,7 +109,16 @@ write() {
         fi
     } > "$tmp"
     chmod 644 "$tmp"
-    mv "$tmp" "$file"
+    if ! ln "$tmp" "$file" 2>/dev/null && [ ! -e "$file" ]; then
+        # No hard links on this filesystem: mv -n doesn't replace a file
+        # either (GNU and BSD alike), though it checks and moves in two steps.
+        mv -n "$tmp" "$file"
+    fi
+    rm -f "$tmp"
+    if [ ! -e "$file" ]; then
+        echo "Couldn't create $file." >&2
+        exit 1
+    fi
 }
 
 # These read compose's normalised output: two-space indents, services at the
@@ -160,27 +174,24 @@ app_ports_on_loopback() {
         END { done_item(); exit (bad || (had_ports && !items)) }'
 }
 
-# Only the keys, so a diff of it can't show a value: compose resolves
-# env_file and environment into the output, GH_TOKEN included. A key starts
-# with a plain identifier character; any other list item (a quoted string
-# with ": " in it, say) becomes "- ...", and block scalars' lines are dropped.
-keys_only() {
+# Which parts of two configs ($1 and $2, files of the merged config minus the
+# app's ports) differ, named only by fixed paths: top-level keys, service
+# names, and services.<name>.<key>. Nothing deeper, and no values: compose
+# resolves env_file and environment into the output, and interpolates
+# list-form labels and environment into mapping keys, so either can hold
+# GH_TOKEN. Each part is compared whole, so a change deep inside one still
+# names it, and a path under one already named isn't repeated. Only lines at
+# those indents start a part, and under services no value's lines sit that
+# shallow, so a value can't pose as a path.
+changed_paths() {
     awk '
-        block && ($0 == "" || (match($0, /^ */) && RLENGTH > block_indent)) { next }
-        { block = 0 }
-        /^ *(- )?[A-Za-z0-9_.$-][^ :]*:( .*)?$/ {
-            match($0, /^ *(- )?[A-Za-z0-9_.$-][^ :]*:/)
-            key = substr($0, 1, RLENGTH)
-            rest = substr($0, RLENGTH + 1)
-            if (rest ~ /^ [|>]/) { block = 1; match($0, /^ */); block_indent = RLENGTH }
-            print key (rest == "" ? "" : " ...")
-            next
-        }
-        /^ *- / {
-            match($0, /^ *- /)
-            if (substr($0, RLENGTH + 1) ~ /^[|>]/) { block = 1; block_indent = RLENGTH - 2 }
-            print substr($0, 1, RLENGTH) "..."
-        }'
+        FNR == 1 { side++ }
+        /^[^ ]/ { top = $0; sub(/:.*/, "", top); svc = ""; path = top }
+        top == "services" && /^  [^ ]/ { svc = $0; sub(/^  /, "", svc); sub(/:.*/, "", svc); path = top "." svc }
+        top == "services" && svc != "" && /^    [^ ]/ { key = $0; sub(/^    /, "", key); sub(/:.*/, "", key); path = "services." svc "." key }
+        { part[side, path] = part[side, path] "\n" $0; seen[path] = 1 }
+        END { for (p in seen) if (part[1, p] != part[2, p]) print p }' "$1" "$2" \
+        | sort | awk '{ for (p in named) if (index($0, p ".") == 1) next; print; named[$0] = 1 }'
 }
 
 # The file is outside the .devcontainer/ check (it's this host's own), so this
@@ -190,22 +201,29 @@ keys_only() {
 # sections, !reset tags, anchors), without parsing YAML here.
 # Exits 2 when the file does more than that, 1 when compose fails.
 check() {
-    local file="$1" with without
+    local file="$1" with without command
     shift
-    if ! without="$("$@" config)"; then
-        echo "docker compose couldn't read the compose files without $file (above)." >&2
+    # Compose's own errors aren't shown: they can quote values, tokens
+    # included. The message names the command that shows them.
+    if ! without="$("$@" config 2>/dev/null)"; then
+        printf -v command '%q ' "$@" config
+        command="${command% }"
+        echo "docker compose couldn't read the compose files. Its error isn't shown, as it can quote values such as tokens; to see it, run: $command" >&2
         exit 1
     fi
-    if ! with="$("$@" -f "$file" config)"; then
-        echo "docker compose couldn't read $file on top of the others (above)." >&2
+    if ! with="$("$@" -f "$file" config 2>/dev/null)"; then
+        printf -v command '%q ' "$@" -f "$file" config
+        command="${command% }"
+        echo "docker compose couldn't read $file on top of the other compose files. Its error isn't shown, as it can quote values such as tokens; to see it, run: $command" >&2
         exit 1
     fi
     if [ "$(without_app_ports <<<"$with")" != "$(without_app_ports <<<"$without")" ]; then
-        # Keys only, never values; cat -v, so control characters in a file that
-        # may not be the user's own can't rewrite what's shown.
-        diff <(without_app_ports <<<"$without" | keys_only) <(without_app_ports <<<"$with" | keys_only) \
-            | cat -v >&2 || true
-        echo "$file changes more than the app service's ports (the keys it changes are above; values aren't shown, as they can hold secrets)." >&2
+        # Through pipes, not files, since both hold the resolved config,
+        # tokens included. cat -v, so control characters in a file that may
+        # not be the user's own can't rewrite what's shown.
+        changed_paths <(without_app_ports <<<"$without") <(without_app_ports <<<"$with") \
+            | sed 's/^/  /' | cat -v >&2 || true
+        echo "$file changes more than the app service's ports: it changes what's listed above (values aren't shown, as they can hold secrets)." >&2
         exit 2
     fi
     if ! app_ports_on_loopback <<<"$with"; then

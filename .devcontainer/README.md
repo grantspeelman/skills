@@ -47,6 +47,15 @@ or another checkout's running dev container, it takes the next free one. A
 clash that turns up later makes `start.sh` stop, pointing at the file. Each
 start prints which host port goes to which container port.
 
+`127.0.0.1` keeps them local only with Docker Engine 28.0 or later on a Linux
+host: before that, hosts on your LAN can reach them
+([moby/moby#45610](https://github.com/moby/moby/issues/45610)). `start.sh`
+warns when it sees an older engine running on this Linux machine; upgrade, or
+block it with a firewall rule (the issue has examples). Docker Desktop, Colima,
+OrbStack and Rancher Desktop aren't affected the same way, since their engine
+runs in a VM, and the warning skips Podman, whose versions are numbered
+differently.
+
 The file is yours: git ignores it, `start.sh` never overwrites it, and the
 `.devcontainer/` check leaves it out (unless a commit adds it). Instead,
 `start.sh` refuses to run if the file changes anything but the app service's

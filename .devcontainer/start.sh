@@ -209,6 +209,17 @@ elif [ "$mount_mode" = false ]; then
     fi
 fi
 
+# The image is built for these, and the ports check below reads the same
+# config compose builds from.
+USER_UID="$(id -u)"
+USER_GID="$(id -g)"
+if [ "$USER_UID" -eq 0 ] || [ "$USER_GID" -eq 0 ]; then
+    echo -e "${YELLOW}Running as root: building the image for UID/GID 1000:1000 instead, so the image's root user is not remapped.${NC}"
+    USER_UID=1000
+    USER_GID=1000
+fi
+export USER_UID USER_GID
+
 # ── Ports: published on this host's 127.0.0.1 only ──────────────────────────
 # The container ports the project's dev servers listen on, space-separated.
 # They seed compose.ports.yml, which ports.sh writes once and start.sh then
@@ -246,7 +257,7 @@ case "$ports_status" in
         exit 1
         ;;
     *)
-        echo -e "${RED}Stopped: docker compose couldn't check $PORTS_FILE (above). Is Docker Compose 2.24 or later installed?${NC}" >&2
+        echo -e "${RED}Stopped: docker compose couldn't check $PORTS_FILE. Run the command above to see compose's error; this needs Docker Compose 2.24 or later.${NC}" >&2
         exit 1
         ;;
 esac
@@ -254,15 +265,6 @@ COMPOSE+=(-f "$PORTS_FILE")
 # Runs a command in the container. Its stdin is the caller's, so callers that
 # don't feed it anything pass </dev/null, or it eats input meant for a prompt.
 in_app() { "${COMPOSE[@]}" exec -T --user vscode "$SERVICE" "$@"; }
-
-USER_UID="$(id -u)"
-USER_GID="$(id -g)"
-if [ "$USER_UID" -eq 0 ] || [ "$USER_GID" -eq 0 ]; then
-    echo -e "${YELLOW}Running as root: building the image for UID/GID 1000:1000 instead, so the image's root user is not remapped.${NC}"
-    USER_UID=1000
-    USER_GID=1000
-fi
-export USER_UID USER_GID
 
 # ── GitHub: the token is the container's only git credential ────────────────
 # No ssh-agent is forwarded: it would sign as your own key, which reaches every
@@ -613,6 +615,19 @@ published="$(docker inspect "$("${COMPOSE[@]}" ps -q "$SERVICE")" --format \
 if [ -n "$published" ]; then
     echo -e "${GREEN}Ports (host -> container):${NC}"
     while IFS= read -r line; do echo "  $line"; done <<<"$published"
+    # Before 28.0, Docker Engine on Linux let hosts on the same LAN reach ports
+    # published on 127.0.0.1 (moby/moby#45610). Only an engine running on this
+    # Linux host itself: Docker Desktop, Colima, OrbStack and Rancher Desktop
+    # run theirs in a VM, and Podman's version numbers are its own.
+    engine="$(docker version --format '{{.Server.Version}}' 2>/dev/null || true)"
+    engine_major="${engine%%.*}"
+    engine_name="$(docker version --format '{{.Server.Platform.Name}}' 2>/dev/null || true)"
+    if [ "$(uname -s)" = Linux ] && [[ "$engine_major" =~ ^[0-9]+$ ]] && [ "$engine_major" -lt 28 ] \
+        && [ "$(docker version --format '{{.Server.Os}}' 2>/dev/null || true)" = linux ] \
+        && [[ "$engine_name" != *[Pp]odman* && "$engine_name" != *"Docker Desktop"* ]] \
+        && [[ "$(docker info --format '{{.OperatingSystem}}' 2>/dev/null || true)" != *"Docker Desktop"* ]]; then
+        echo -e "${YELLOW}Docker Engine $engine: before 28.0, hosts on your LAN can reach ports published on 127.0.0.1 (https://github.com/moby/moby/issues/45610). Upgrade Docker, or block it with a firewall rule (the issue has examples).${NC}"
+    fi
 fi
 
 # %q so the line stays copy-pasteable from a checkout path containing spaces.
